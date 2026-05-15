@@ -1,6 +1,32 @@
+import { useState } from "react";
 import './App.css'
 
 function App() {
+  const [message, setMessage] = useState("");
+  const [reply, setReply] = useState("");
+
+  async function sendMessage() {
+    if (!message.trim()) return;
+
+    try {
+      const response = await fetch("http://127.0.0.1:5000/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: message,
+        }),
+      });
+
+      const data = await response.json();
+      setReply(data.reply);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      setReply("Error connecting to backend.");
+    }
+  }
+
   return (
     <>
       <section id="center">
@@ -15,15 +41,38 @@ function App() {
         </div>
       </section>
       <section id="next-steps">
-        <div id="docs">
-          <ul>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button" alt="" />
-                Start chatting!
-              </a>
-            </li>
-          </ul>
+        <div style={{ marginTop: "2rem" }}>
+          <input
+            type="text"
+            placeholder="Ask something..."
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            style={{
+              padding: "12px",
+              width: "300px",
+              borderRadius: "8px",
+              border: "1px solid #ccc",
+              marginRight: "8px",
+            }}
+          />
+
+          <button
+            onClick={sendMessage}
+            style={{
+              padding: "12px 18px",
+              borderRadius: "8px",
+              cursor: "pointer",
+            }}
+          >
+            Send
+          </button>
+
+          {reply && (
+            <div style={{ marginTop: "1rem" }}>
+              <strong>Backend reply:</strong>
+              <p>{reply}</p>
+            </div>
+          )}
         </div>
         <div id="social">
           <ul>
