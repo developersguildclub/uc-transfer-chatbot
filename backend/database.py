@@ -32,23 +32,24 @@ def setup_database():
     """)
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS articulation_courses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            agreement_id INTEGER,
-            uc_prefix TEXT,
-            uc_course_number TEXT,
-            uc_course_title TEXT,
-            cc_prefix TEXT,
-            cc_course_number TEXT,
-            cc_course_title TEXT,
-            group_position INTEGER,
-            course_position INTEGER,
-            group_conjunction TEXT,
-            course_conjunction TEXT,
-            notes TEXT,
-            FOREIGN KEY (agreement_id) REFERENCES assist_agreements(id)
-        )
-    """)
+    CREATE TABLE IF NOT EXISTS articulation_courses (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agreement_id INTEGER,
+        uc_prefix TEXT,
+        uc_course_number TEXT,
+        uc_course_title TEXT,
+        cc_prefix TEXT,
+        cc_course_number TEXT,
+        cc_course_title TEXT,
+        group_position INTEGER,
+        course_position INTEGER,
+        group_conjunction TEXT,
+        course_conjunction TEXT,
+        requirement_instruction TEXT,
+        notes TEXT,
+        FOREIGN KEY (agreement_id) REFERENCES assist_agreements(id)
+    )
+""")
 
     cursor.execute("""
         INSERT INTO transfer_info (question_keyword, answer)

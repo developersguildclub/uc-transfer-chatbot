@@ -1,38 +1,30 @@
 import json
 import requests
+import time
 from database import get_connection, setup_database
+from assist_keys import ASSIST_AGREEMENTS
 
-ASSIST_URL = "https://prod.assistng.org/articulation/api/Agreements?Key=76%2F113%2Fto%2F79%2FMajor%2F18bc32d8-6aa4-47cc-aced-08ddbf3f4ee7"
+ASSIST_API_URL = "https://prod.assistng.org/articulation/api/Agreements"
 
-def fetch_assist_agreement(url):
-    response = requests.get(url, headers={
-        "accept": "application/json"
-    })
+def fetch_assist_agreement(key):
+    response = requests.get(
+        ASSIST_API_URL,
+        params={"Key": key},
+        headers={"accept": "application/json"}
+    )
+
+    print("Fetching:", response.url)
 
     if response.status_code != 200:
-        print("Response text:")
+        print("Failed key:", key)
+        print("Status:", response.status_code)
         print(response.text)
-        raise Exception(f"Failed to fetch ASSIST data. Status code: {response.status_code}")
+        return None
 
     return response.json()
 
-def save_assist_agreement(url, data):
+def save_assist_agreement(source_key, metadata, data):
     result = data.get("result", {})
-
-    major = result.get("name", "Unknown major")
-
-    academic_year_raw = result.get("academicYear", "{}")
-    academic_year = "Unknown year"
-
-    try:
-        academic_year_data = json.loads(academic_year_raw)
-        academic_year = academic_year_data.get("code", "Unknown year")
-    except Exception:
-        pass
-
-    # update these after inspecting the actual response structure
-    from_school = "De Anza College"
-    to_school = "Unknown UC"
 
     raw_json = json.dumps(data)
 
@@ -50,11 +42,11 @@ def save_assist_agreement(url, data):
         )
         VALUES (?, ?, ?, ?, ?, ?)
     """, (
-        url,
-        from_school,
-        to_school,
-        major,
-        academic_year,
+        source_key,
+        metadata.get("from_school", "Unknown"),
+        metadata.get("to_school", "Unknown"),
+        metadata.get("major", result.get("name", "Unknown major")),
+        "Unknown year",
         raw_json
     ))
 
@@ -64,27 +56,19 @@ def save_assist_agreement(url, data):
 def main():
     setup_database()
 
-    print("Fetching ASSIST agreement...")
-    data = fetch_assist_agreement(ASSIST_URL)
+    for agreement in ASSIST_AGREEMENTS:
+        key = agreement["key"]
 
-    print("Saving agreement to database...")
-    save_assist_agreement(ASSIST_URL, data)
+        print("\n==============================")
+        print("Scraping:", agreement["from_school"], "→", agreement["to_school"], agreement["major"])
 
-    result = data.get("result", {})
+        data = fetch_assist_agreement(key)
 
-    print("\nSaved agreement!")
-    print("Major:", result.get("name"))
-    print("Type:", result.get("type"))
-    print("Publish date:", result.get("publishDate"))
+        if data:
+            save_assist_agreement(key, agreement, data)
+            print("Saved!")
 
-    articulations_raw = result.get("articulations", "[]")
-
-    try:
-        articulations = json.loads(articulations_raw)
-        print("Number of articulation sections:", len(articulations))
-    except Exception as e:
-        print("Could not parse articulations.")
-        print("Error:", e)
+        time.sleep(1)
 
 if __name__ == "__main__":
     main()
