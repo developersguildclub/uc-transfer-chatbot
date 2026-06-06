@@ -1,6 +1,8 @@
-from flask import Flask, request, jsonify
+import json
+
+from flask import Flask, request, jsonify, Response, stream_with_context
 from flask_cors import CORS
-from model import get_ai_response
+from model import stream_ai_response
 from database import setup_database
 from query_courses import search_articulations
 
@@ -88,10 +90,24 @@ def search():
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.get_json()
-    user_message = data.get("message", "")
-    ai_reply = get_ai_response(user_message)
+    user_message = data["message"]
 
-    return {"reply": ai_reply}
+    def format_sse(event, payload):
+        return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
+
+    def generate():
+        yield format_sse("message_start", {})
+
+        for chunk in stream_ai_response(user_message):
+            yield format_sse("text_delta", {"text": chunk})
+
+        yield format_sse("message_end", {})
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache"}
+    )
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)

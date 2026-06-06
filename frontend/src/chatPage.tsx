@@ -7,6 +7,7 @@ interface Message {
 }
 
 const CHAT_MESSAGES_STORAGE_KEY = 'uc-transfer-chatbot:messages';
+const REVEAL_INTERVAL_MS = 32;
 
 // TODO Chat Bot Name
 const INITIAL_MESSAGES: Message[] = [
@@ -41,6 +42,39 @@ function loadStoredMessages() {
 	}
 }
 
+function readTextDelta(rawEvent: string) {
+	let event = '';
+	let data = '';
+
+	for (const rawLine of rawEvent.split('\n')) {
+		const line = rawLine.replace(/\r$/, '');
+
+		if (line.startsWith('event:')) {
+			event = line.slice('event:'.length).trim();
+		}
+
+		if (line.startsWith('data:')) {
+			data += line.slice('data:'.length).trimStart();
+		}
+	}
+
+	if (event !== 'text_delta') {
+		return null;
+	}
+
+	const parsed: unknown = JSON.parse(data);
+
+	if (typeof parsed !== 'object' || parsed === null || !('text' in parsed)) {
+		throw new Error('Chat stream text was missing');
+	}
+
+	if (typeof parsed.text !== 'string') {
+		throw new Error('Chat stream text was invalid');
+	}
+
+	return parsed.text;
+}
+
 export default function ChatPage() {
 	const [messages, setMessages] = useState<Message[]>(loadStoredMessages);
 	const [input, setInput] = useState('');
@@ -70,6 +104,57 @@ export default function ChatPage() {
 		setInput('');
 		setIsSending(true);
 
+		let streamedText = '';
+		let shownText = '';
+		let streamDone = false;
+		let revealTimer: number | undefined;
+		let finishReveal = () => {};
+		const revealDone = new Promise<void>((resolve) => {
+			finishReveal = resolve;
+		});
+
+		function writeAssistantMessage(text: string) {
+			setMessages((prev) => {
+				const next = [...prev];
+				const lastMessage = next.at(-1);
+
+				if (!lastMessage || lastMessage.role !== 'bot') {
+					return [...next, { role: 'bot', text }];
+				}
+
+				next[next.length - 1] = {
+					...lastMessage,
+					text
+				};
+
+				return next;
+			});
+		}
+
+		function revealText() {
+			const remaining = streamedText.length - shownText.length;
+
+			if (remaining > 0) {
+				const count = Math.min(remaining, Math.max(4, Math.min(28, Math.ceil(remaining / 6))));
+				shownText = streamedText.slice(0, shownText.length + count);
+				writeAssistantMessage(shownText);
+			}
+
+			if (streamDone && shownText.length === streamedText.length) {
+				if (revealTimer !== undefined) {
+					window.clearInterval(revealTimer);
+				}
+				finishReveal();
+			}
+		}
+
+		function startReveal() {
+			if (revealTimer !== undefined) return;
+
+			revealText();
+			revealTimer = window.setInterval(revealText, REVEAL_INTERVAL_MS);
+		}
+
 		try {
 			const res = await fetch('/api/chat', {
 				method: 'POST',
@@ -81,13 +166,42 @@ export default function ChatPage() {
 				throw new Error('Chat request failed');
 			}
 
-			const data = await res.json();
-			if (typeof data.reply !== 'string') {
-				throw new Error('Chat response was invalid');
+			if (!res.body) {
+				throw new Error('Chat response was not streamable');
 			}
 
-			setMessages((prev) => [...prev, { role: 'bot', text: data.reply }]);
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+
+			while (true) {
+				const { value, done } = await reader.read();
+
+				buffer += decoder.decode(value, { stream: !done });
+
+				const rawEvents = buffer.split('\n\n');
+				buffer = rawEvents.pop() ?? '';
+
+				for (const rawEvent of rawEvents) {
+					const text = readTextDelta(rawEvent);
+
+					if (text) {
+						streamedText += text;
+						startReveal();
+					}
+				}
+
+				if (done) break;
+			}
+
+			streamDone = true;
+			revealText();
+			await revealDone;
 		} catch {
+			if (revealTimer !== undefined) {
+				window.clearInterval(revealTimer);
+			}
+
 			setMessages((prev) => [
 				...prev,
 				{ role: 'bot', text: "Sorry, I couldn't get a response. Please try again." }
@@ -117,7 +231,11 @@ export default function ChatPage() {
 					{messages.map((msg, i) =>
 						msg.role === 'bot' ? (
 							<div key={i} className="chat-start chat">
-								<div className="chat-bubble bg-primary/50">
+								<div
+									className={`chat-bubble bg-primary/50 ${
+										isSending && i === messages.length - 1 ? 'streaming-bubble' : ''
+									}`}
+								>
 									<ReactMarkdown>{msg.text}</ReactMarkdown>
 								</div>
 							</div>
@@ -127,7 +245,7 @@ export default function ChatPage() {
 							</div>
 						)
 					)}
-					{isSending && (
+					{isSending && messages.at(-1)?.role === 'user' && (
 						<div className="chat-start chat">
 							<div className="chat-bubble bg-primary/50">
 								<span

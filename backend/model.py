@@ -20,6 +20,19 @@ agent = create_agent(
     system_prompt="You are a helpful assistant",
 )
 
+def stream_ai_response(user_message: str):
+    stream = agent.stream_events(
+        {"messages": [
+            {"role": "user", "content": user_message}
+        ]},
+        version="v3"
+    )
+
+    for message in stream.messages:
+        for delta in message.text:
+            if delta:
+                yield delta
+
 def get_ai_response(user_message: str):
     message = user_message.lower()
     to_school = None
