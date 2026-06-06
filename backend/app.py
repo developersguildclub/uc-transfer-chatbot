@@ -87,11 +87,47 @@ def search():
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    data = request.get_json()
-    user_message = data.get("message", "")
-    ai_reply = get_ai_response(user_message)
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        return jsonify({"error": "Expected JSON object"}), 400
+
+    messages = chat_messages_from_request(data)
+    if not messages or messages[-1]["role"] != "user":
+        return jsonify({"error": "Expected latest user message"}), 400
+
+    ai_reply = get_ai_response(messages)
 
     return {"reply": ai_reply}
+
+def chat_messages_from_request(data):
+    raw_messages = data.get("messages")
+    messages = []
+
+    if isinstance(raw_messages, list):
+        for item in raw_messages:
+            if not isinstance(item, dict):
+                continue
+
+            role = item.get("role")
+            content = item.get("content")
+            if content is None:
+                content = item.get("text")
+
+            if role == "bot":
+                role = "assistant"
+
+            if role in ("user", "assistant") and isinstance(content, str) and content.strip():
+                messages.append({"role": role, "content": content.strip()})
+
+    for index, message in enumerate(messages):
+        if message["role"] == "user":
+            return messages[index:]
+
+    message = data.get("message")
+    if isinstance(message, str) and message.strip():
+        return [{"role": "user", "content": message.strip()}]
+
+    return []
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
