@@ -20,15 +20,18 @@ agent = create_agent(
 )
 
 def get_ai_response(messages):
-    to_school = None
-    major = None
-    receiving = None
-    cc_course = None
-
-    schools = get_valid_schools()
-    majors = get_valid_major()
-    receiving_courses = get_valid_receiving_courses()
-    cc_courses = get_valid_cc_courses()
+    filters = {
+        "to_school": None,
+        "major": None,
+        "receiving": None,
+        "cc_course": None,
+    }
+    filter_values = {
+        "to_school": get_valid_schools(),
+        "major": get_valid_major(),
+        "receiving": get_valid_receiving_courses(),
+        "cc_course": get_valid_cc_courses(),
+    }
 
     for message in reversed(messages):
         if message["role"] != "user":
@@ -36,24 +39,16 @@ def get_ai_response(messages):
 
         content = message["content"].lower()
 
-        if to_school is None:
-            to_school = first_matching_value(schools, content)
-        if major is None:
-            major = first_matching_value(majors, content)
-        if receiving is None:
-            receiving = first_matching_value(receiving_courses, content)
-        if cc_course is None:
-            cc_course = first_matching_value(cc_courses, content)
+        for name, values in filter_values.items():
+            if filters[name] is None:
+                filters[name] = first_matching_value(values, content)
+
+        if all(filters.values()):
+            break
 
     rows = []
-    if to_school or major or receiving or cc_course:
-        rows = search_articulations(
-            to_school=to_school,
-            major=major,
-            receiving=receiving,
-            cc_course=cc_course,
-            limit=20
-        )
+    if any(filters.values()):
+        rows = search_articulations(**filters, limit=20)
 
     model_messages = messages
     if rows:
