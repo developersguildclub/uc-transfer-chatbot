@@ -118,15 +118,16 @@ Example request body:
 
 ### `database.py`
 
-Defines the SQLite database connection and creates all database tables.
+Defines the SQLite database connections and creates the transfer-data tables.
 
-Main database file:
+Database targets:
 
 ```txt
-transfer.db
+transfer.db          # transfer and articulation seed data
+instance/app.db      # private app data, such as accounts and saved chats
 ```
 
-Main tables:
+Transfer-data tables:
 
 | Table | Purpose |
 |---|---|
