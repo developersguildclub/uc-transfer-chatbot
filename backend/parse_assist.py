@@ -6,6 +6,7 @@ from database import get_connection, setup_database
 
 
 def clean_html_text(text):
+    # Text cleanup makes ASSIST html readable before storing rows.
     if not text:
         return ""
 
@@ -16,17 +17,14 @@ def clean_html_text(text):
     return text.strip()
 
 
+# Template ids connect ASSIST layout cells to articulation rows.
 def iter_template_cell_ids(asset):
-    """
-    Walk through a RequirementGroup template asset and return every template cell id.
-    These ids match articulation["templateCellId"].
-    """
     cell_ids = []
 
     def walk(obj):
         if isinstance(obj, dict):
             if obj.get("id"):
-                # Cell-level ids are the ones used by articulations as templateCellId
+                # Only articulation cell types can become receiving rows.
                 if obj.get("type") in {"Course", "Series", "Requirement", "GeneralEducation"}:
                     cell_ids.append(obj.get("id"))
 
@@ -41,20 +39,8 @@ def iter_template_cell_ids(asset):
     return cell_ids
 
 
+# Requirement titles live apart from rows, so this rebuilds labels.
 def build_template_cell_title_map(template_assets):
-    """
-    Build:
-        templateCellId -> human readable section/category title
-
-    ASSIST stores titles separately from rows:
-    RequirementTitle at position 0
-    RequirementGroup at position 1
-    RequirementTitle at position 2
-    RequirementGroup at position 3
-    etc.
-
-    So we keep the latest RequirementTitle and apply it to following RequirementGroup.
-    """
     if isinstance(template_assets, str):
         try:
             template_assets = json.loads(template_assets)
@@ -80,12 +66,10 @@ def build_template_cell_title_map(template_assets):
         if asset_type != "RequirementGroup":
             continue
 
-        # Map every course/series/requirement cell in this group
-        # to the most recent RequirementTitle.
+        # Requirement groups inherit the latest visible title.
         group_title = current_requirement_title
 
-        # Some groups also contain inner SectionHeader rows.
-        # Example: READING AND COMPOSITION REQUIREMENT
+        # Inner headers add names like reading composition requirement.
         current_section_header = ""
 
         sections = asset.get("sections", [])
@@ -105,6 +89,7 @@ def build_template_cell_title_map(template_assets):
 
 
 def extract_requirement_instruction(section):
+    # Requirement instructions come from receiving attributes when present.
     attributes = section.get("receivingAttributes", [])
     texts = []
 
@@ -136,8 +121,7 @@ def extract_requirement_instruction(section):
             if value in ignored_values:
                 continue
 
-            # Only keep real requirement-looking text.
-            # Do NOT keep random strings just because they contain "course".
+            # Keep completion text, not generic course metadata.
             if "complete" in value.lower():
                 texts.append(value)
 
@@ -145,6 +129,7 @@ def extract_requirement_instruction(section):
 
 
 def format_course(course):
+    # Course formatting preserves code and title for prompt display.
     prefix = course.get("prefix", "")
     number = course.get("courseNumber", "")
     title = course.get("courseTitle", "")
@@ -157,11 +142,11 @@ def format_course(course):
     return course_code
 
 
-# UC courses can be articulated as either single courses or series of courses.
 def extract_receiving_side(articulation):
+    # Receiving-side parsing keeps UC course, series, GE, and requirement rows.
     articulation_type = articulation.get("type", "")
 
-    # Case 1: normal single UC course
+    # Course rows store one UC course.
     if articulation_type == "Course":
         course = articulation.get("course", {})
         uc_prefix, uc_number, uc_title = extract_course_name(course)
@@ -175,7 +160,7 @@ def extract_receiving_side(articulation):
             "receiving_courses_text": receiving_text,
         }
 
-    # Case 2: UC course series
+    # Series rows keep the UC course group readable.
     if articulation_type == "Series":
         series = articulation.get("series", {})
         conjunction = series.get("conjunction", "And")
@@ -186,7 +171,6 @@ def extract_receiving_side(articulation):
         course_texts = [format_course(course) for course in courses]
         receiving_text = f" {conjunction.upper()} ".join(course_texts)
 
-        # Store a readable series title in uc_course_title
         series_name = series.get("name") or receiving_text
 
         return {
@@ -196,7 +180,7 @@ def extract_receiving_side(articulation):
             "uc_title": series_name,
             "receiving_courses_text": receiving_text,
         }
-    # Case 3: Breadth / General Education area
+    # GE rows keep breadth area text as the receiving side.
     if articulation_type == "GeneralEducation":
         ge_area = articulation.get("generalEducationArea", {})
 
@@ -220,7 +204,7 @@ def extract_receiving_side(articulation):
             "receiving_courses_text": receiving_text,
         }
 
-    # Case 4: Requirement rows, such as Reading & Composition A/B
+    # Requirement rows keep named admission or section requirements.
     if articulation_type == "Requirement":
         possible_fields = [
             articulation.get("requirement"),
@@ -258,7 +242,7 @@ def extract_receiving_side(articulation):
                 receiving_text = field.strip()
                 break
 
-        # Extra fallback: check receivingAttributes for useful text
+        # Attribute fallback catches requirement wording missed above.
         if not receiving_text:
             attributes = articulation.get("receivingAttributes", [])
 
@@ -296,7 +280,7 @@ def extract_receiving_side(articulation):
             "receiving_courses_text": receiving_text,
         }
 
-    # Fallback for unsupported types
+    # Unsupported receiving types stay visible instead of disappearing.
     return {
         "receiving_type": articulation_type or "Unknown",
         "uc_prefix": "",
@@ -307,10 +291,7 @@ def extract_receiving_side(articulation):
 
 
 def generate_requirement_instruction(group_conjunction, course_groups):
-    """
-    Only generate an instruction when the AND/OR structure is clear.
-    """
-
+    # Generated instructions capture clear ASSIST AND/OR structure.
     if len(course_groups) > 1 and group_conjunction == "Or":
         return "Choose one option from the following"
 
@@ -321,6 +302,7 @@ def generate_requirement_instruction(group_conjunction, course_groups):
 
 
 def extract_course_name(course):
+    # Course name extraction keeps parser inserts easy to read.
     prefix = course.get("prefix", "")
     number = course.get("courseNumber", "")
     title = course.get("courseTitle", "")
@@ -328,6 +310,7 @@ def extract_course_name(course):
 
 
 def extract_notes(course):
+    # Course notes preserve ASSIST attributes beside each row.
     attributes = course.get("attributes", [])
     notes = []
 
@@ -349,12 +332,7 @@ def extract_notes(course):
 
 
 def extract_section_title(section, articulation):
-    """
-    Tries to extract a human-readable section title like:
-    CHEMISTRY, BIOLOGY, READING AND COMPOSITION REQUIREMENT,
-    Courses that satisfy Reading & Composition A, etc.
-    """
-
+    # Section titles name the ASSIST requirement around a row.
     possible_values = [
         section.get("title"),
         section.get("name"),
@@ -364,7 +342,7 @@ def extract_section_title(section, articulation):
         articulation.get("label"),
     ]
 
-    # Requirement type may contain useful names
+    # Requirement objects often carry the clearest section name.
     requirement = articulation.get("requirement")
     if isinstance(requirement, dict):
         possible_values.extend(
@@ -376,7 +354,7 @@ def extract_section_title(section, articulation):
             ]
         )
 
-    # General Education type
+    # GE rows may expose code and name separately.
     ge_area = articulation.get("generalEducationArea")
     if isinstance(ge_area, dict):
         code = str(ge_area.get("code", "")).strip()
@@ -389,7 +367,7 @@ def extract_section_title(section, articulation):
         elif code:
             possible_values.append(code)
 
-    # Receiving attributes sometimes contain section wording
+    # Receiving attributes can contain section wording.
     receiving_attributes = articulation.get("receivingAttributes", [])
 
     if isinstance(receiving_attributes, str):
@@ -446,21 +424,7 @@ def has_any(text, phrases):
 def infer_requirement_category(
     section_title="", requirement_instruction="", notes="", receiving_type=""
 ):
-    """
-    Conservative classification for ASSIST sections.
-
-    Returns:
-    - required_for_admission
-    - major_requirements
-    - prerequisites_for_major
-    - strongly_recommended
-    - highly_recommended
-    - recommended_not_required
-    - recommended
-    - breadth_requirement
-    - unknown
-    """
-
+    # Requirement category stays conservative for chatbot claim boundaries.
     combined_text = " ".join(
         [
             section_title or "",
@@ -471,7 +435,7 @@ def infer_requirement_category(
 
     combined_text = " ".join(combined_text.split())
 
-    # Detect "not required" safely.
+    # Not-required language wins before required-language checks.
     not_required_patterns = [
         r"not required",
         r"but not required",
@@ -482,8 +446,6 @@ def infer_requirement_category(
 
     has_not_required = any(re.search(pattern, combined_text) for pattern in not_required_patterns)
 
-    # recommended categories first so "recommended but not required"
-    # does not get misclassified as required.
     if has_not_required and "recommended" in combined_text:
         return "recommended_not_required"
 
@@ -493,7 +455,7 @@ def infer_requirement_category(
     if "highly recommended" in combined_text:
         return "highly_recommended"
 
-    # Required / admission categories
+    # Admission phrases become required-for-admission rows.
     required_for_admission_phrases = [
         "required for admission",
         "required courses for admission",
@@ -507,7 +469,7 @@ def infer_requirement_category(
     if has_any(combined_text, required_for_admission_phrases):
         return "required_for_admission"
 
-    # Major prep / prerequisites
+    # Major-prep phrases become prerequisite rows.
     prerequisite_phrases = [
         "prerequisites for the major",
         "prerequisite courses",
@@ -522,7 +484,7 @@ def infer_requirement_category(
     if has_any(combined_text, prerequisite_phrases):
         return "prerequisites_for_major"
 
-    # Major requirements
+    # Major requirement phrases become major rows.
     major_requirement_phrases = [
         "major requirements",
         "lower division major requirements",
@@ -536,7 +498,7 @@ def infer_requirement_category(
     if has_any(combined_text, major_requirement_phrases):
         return "major_requirements"
 
-    # Breadth / GE sections
+    # Breadth and GE phrases become breadth rows.
     breadth_phrases = [
         "breadth requirements",
         "breadth requirement",
@@ -562,6 +524,7 @@ def infer_requirement_category(
 
 
 def parse_and_save_courses():
+    # Parser rebuilds searchable articulation rows from raw ASSIST JSON.
     setup_database()
 
     conn = get_connection()

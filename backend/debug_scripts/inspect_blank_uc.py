@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from database import get_connection
 
+# Debug helper finds raw sections that miss UC course fields.
 conn = get_connection()
 cursor = conn.cursor()
 
@@ -31,7 +32,7 @@ for i, section in enumerate(articulations):
     articulation = section.get("articulation", {})
     course = articulation.get("course", {})
 
-    # Find sections where your current parser would get blank UC course
+    # Empty course payloads explain blank receiving-side parser rows.
     if not course:
         print("=" * 80)
         print("SECTION INDEX:", i)

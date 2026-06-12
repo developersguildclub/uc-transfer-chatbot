@@ -21,6 +21,7 @@ TRANSFER_REQUIREMENTS_PATH = BASE_DIR / "data" / "transfer_requirements.json"
 RECENT_MESSAGE_COUNT = 8
 PRIOR_QUESTION_COUNT = 16
 
+# System prompt keeps tone, formatting, and claim boundaries compact.
 SYSTEM_PROMPT = """
 You are a UC transfer advising assistant.
 
@@ -37,6 +38,7 @@ Say what is uncertain and what detail would resolve it.
 
 
 def articulation_rows(rows):
+    # Prompt rows keep only fields the model can cite.
     prompt_rows = []
 
     for row in rows:
@@ -83,6 +85,7 @@ def articulation_rows(rows):
 
 
 def first_mentioned(values, message, skip=None):
+    # Mention matching uses boundaries so short codes do not overmatch.
     matches = []
     message = message.lower()
 
@@ -110,6 +113,7 @@ def first_mentioned(values, message, skip=None):
 
 
 def claim_boundary(to_school, major, rows):
+    # Claim boundaries prevent missing rows becoming transfer denials.
     if not rows:
         return "No matching rows were retrieved. You cannot say the course does not transfer. Say no match was found in local data, and that this is not proof of non-transferability."
 
@@ -121,11 +125,13 @@ def claim_boundary(to_school, major, rows):
 
 @lru_cache
 def transfer_requirements():
+    # GE JSON loads lazily because most turns do not need it.
     with TRANSFER_REQUIREMENTS_PATH.open() as file:
         return json.load(file)["programs"]
 
 
 def transfer_program_ids(message):
+    # Program detection decides when GE context enters the prompt.
     text = message.lower()
     compact = text.replace("-", "").replace(" ", "")
     program_ids = []
@@ -170,6 +176,7 @@ def transfer_program_context(message):
 
 
 def articulation_filters_in(message, filter_values):
+    # Articulation filters map user text onto known database values.
     filters = {
         "to_school": first_mentioned(filter_values["to_school"], message),
         "major": first_mentioned(filter_values["major"], message),
@@ -193,6 +200,7 @@ def looks_like_followup(message):
 
 
 def turn_articulation_filters(messages, filter_values):
+    # Followups borrow prior filters only when the latest turn is vague.
     latest = messages[-1]["content"]
     filters = articulation_filters_in(latest, filter_values)
     if any(filters.values()) or not looks_like_followup(latest):
@@ -223,6 +231,7 @@ def wants_local_summary(message):
 
 
 def model_history(messages):
+    # Long chats keep recent turns plus a compact question index.
     history = messages[:-1]
     if len(history) <= RECENT_MESSAGE_COUNT:
         return history
@@ -247,6 +256,7 @@ def model_history(messages):
 
 
 def question_context_message(latest_message, filters, filter_values, program_context):
+    # Context message is the single retrieval payload sent to model.
     if not any(filters.values()):
         context = {
             "claim_boundary": "No articulation rows were retrieved. Answer from chat history and retrieved general education data if present. Ask for campus, major, UC course, community college course, IGETC, or Cal-GETC when needed.",
@@ -279,6 +289,7 @@ def question_context_message(latest_message, filters, filter_values, program_con
 
 
 def get_chat_model():
+    # Model client initializes lazily so imports stay cheap.
     global chat_model
 
     if chat_model is None:
@@ -294,6 +305,7 @@ def get_chat_model():
 
 
 def get_ai_response(messages):
+    # Main model path combines memory, retrieval, and the user turn.
     if isinstance(messages, str):
         messages = [{"role": "user", "content": messages}]
 

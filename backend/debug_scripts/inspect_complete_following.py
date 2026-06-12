@@ -4,6 +4,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from database import get_connection
 
+# Debug helper prints rows with generic completion instructions.
 conn = get_connection()
 cursor = conn.cursor()
 

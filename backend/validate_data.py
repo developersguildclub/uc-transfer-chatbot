@@ -1,5 +1,6 @@
 from database import get_connection
 
+# Validation script prints parser coverage and suspicious row groups.
 conn = get_connection()
 cursor = conn.cursor()
 

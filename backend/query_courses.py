@@ -2,6 +2,7 @@ from database import get_connection
 
 
 def search_articulations(to_school=None, major=None, receiving=None, cc_course=None, limit=50):
+    # Search builds one parameterized query across articulation fields.
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -81,6 +82,7 @@ def search_articulations(to_school=None, major=None, receiving=None, cc_course=N
 
 
 def get_valid_schools():
+    # Valid-value helpers support model-side mention matching.
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute("""

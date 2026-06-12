@@ -4,6 +4,7 @@ from email.message import EmailMessage
 
 
 def mail_ready():
+    # Mail readiness blocks account email routes before user lookup.
     port = os.getenv("MAIL_PORT")
     username = os.getenv("MAIL_USERNAME")
     password = os.getenv("MAIL_PASSWORD")
@@ -23,6 +24,7 @@ def mail_ready():
 
 
 def send_mail(to_email, subject, body):
+    # SMTP sender keeps delivery details outside account routes.
     host = os.getenv("MAIL_HOST")
     port = os.getenv("MAIL_PORT")
     from_email = os.getenv("MAIL_FROM")

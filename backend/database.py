@@ -5,6 +5,7 @@ BASE_DIR = Path(__file__).resolve().parent
 TRANSFER_DB_PATH = BASE_DIR / "transfer.db"
 APP_DB_PATH = BASE_DIR / "instance" / "app.db"
 
+# Transfer data is public seed data; app data is private state.
 DB_PATH = TRANSFER_DB_PATH
 
 
@@ -20,6 +21,7 @@ def get_app_connection():
 
 
 def setup_app_database():
+    # App database owns auth, sessions, tokens, and saved chats.
     conn = get_app_connection()
     cursor = conn.cursor()
 
@@ -113,6 +115,7 @@ def setup_app_database():
 
 
 def create_transfer_schema(cursor):
+    # Transfer schema stores raw ASSIST JSON and parsed articulation rows.
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS transfer_info (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -174,6 +177,7 @@ SCHEMA_MIGRATIONS = (create_transfer_schema,)
 
 
 def run_migrations(cursor):
+    # SQLite user_version keeps transfer schema upgrades ordered.
     cursor.execute("PRAGMA user_version")
     version = cursor.fetchone()[0]
 
@@ -186,6 +190,7 @@ def run_migrations(cursor):
 
 
 def setup_database():
+    # Transfer setup runs migrations and keeps small seed facts present.
     conn = get_connection()
     cursor = conn.cursor()
 

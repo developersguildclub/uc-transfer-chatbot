@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from database import get_connection
 
+# Debug helper previews one raw ASSIST agreement payload.
 conn = get_connection()
 cursor = conn.cursor()
 

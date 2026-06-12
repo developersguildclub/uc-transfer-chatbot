@@ -1,5 +1,6 @@
 from database import get_connection
 
+# Course helper prints one major in ASSIST option-group shape.
 conn = get_connection()
 cursor = conn.cursor()
 

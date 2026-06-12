@@ -5,6 +5,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from database import get_connection
 
+# Debug helper previews non-course receiving-side requirement payloads.
 conn = get_connection()
 cursor = conn.cursor()
 

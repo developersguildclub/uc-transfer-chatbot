@@ -1,5 +1,6 @@
 from database import get_connection
 
+# Count helper shows discovery, scraping, and parser progress.
 conn = get_connection()
 cursor = conn.cursor()
 

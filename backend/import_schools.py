@@ -1,5 +1,6 @@
 import requests
 
+# Institution helper prints UC ids used by ASSIST discovery.
 url = "https://prod.assistng.org/Institutions/api"
 
 response = requests.get(url)
@@ -10,7 +11,7 @@ institutions = response.json()
 for school in institutions:
     names = school.get("names", [])
 
-    # Get the most recent visible name
+    # Visible names avoid old hidden institution labels.
     visible_names = [n for n in names if not n.get("hideInList", False)]
 
     if not visible_names:
@@ -18,7 +19,6 @@ for school in institutions:
 
     current_name = visible_names[-1].get("name", "")
 
-    # UC schools usually have category/system data,
-    # but name filtering is the easiest first pass.
+    # Name filtering is enough for this helper output.
     if "University of California" in current_name or current_name.startswith("UC "):
         print(school["id"], "-", current_name)

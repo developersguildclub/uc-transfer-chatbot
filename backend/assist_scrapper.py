@@ -8,6 +8,7 @@ ASSIST_API_URL = "https://prod.assistng.org/articulation/api/Agreements"
 
 
 def fetch_assist_agreement(key):
+    # Scraper fetches full ASSIST agreement JSON for stored keys.
     response = requests.get(
         ASSIST_API_URL, params={"Key": key}, headers={"accept": "application/json"}
     )
@@ -24,10 +25,7 @@ def fetch_assist_agreement(key):
 
 
 def parse_json_field(value):
-    """
-    ASSIST sometimes returns fields as JSON strings instead of dictionaries.
-    This safely converts them.
-    """
+    # ASSIST sometimes returns nested objects as JSON strings.
     if isinstance(value, str):
         try:
             return json.loads(value)
@@ -38,6 +36,7 @@ def parse_json_field(value):
 
 
 def extract_school_name(result, field_name):
+    # School name extraction normalizes ASSIST institution payloads.
     school_raw = result.get(field_name)
     school_data = parse_json_field(school_raw)
 
@@ -53,6 +52,7 @@ def extract_school_name(result, field_name):
 
 
 def extract_academic_year(result):
+    # Academic year extraction keeps readable labels in agreement rows.
     academic_year_raw = result.get("academicYear")
     academic_year_data = parse_json_field(academic_year_raw)
 
@@ -68,6 +68,7 @@ def extract_academic_year(result):
 
 
 def save_assist_agreement(source_key, data):
+    # Saved agreements keep raw JSON so parsing can improve later.
     result = data.get("result", {})
 
     from_school = extract_school_name(result, "sendingInstitution")
@@ -109,6 +110,7 @@ def save_assist_agreement(source_key, data):
 
 
 def get_unscraped_keys(limit=50):
+    # Scraper batches only agreement keys not marked scraped.
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -129,6 +131,7 @@ def get_unscraped_keys(limit=50):
 
 
 def main():
+    # Batch entry point sleeps between ASSIST requests.
     setup_database()
 
     keys = get_unscraped_keys(limit=50)

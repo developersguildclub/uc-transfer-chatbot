@@ -7,6 +7,7 @@ violations = []
 
 
 def calls_model_init(node):
+    # Lazy-import check prevents model clients at import time.
     for child in ast.walk(node):
         if isinstance(child, ast.Call) and isinstance(child.func, ast.Name):
             if child.func.id in {"get_chat_model", "init_chat_model"}:

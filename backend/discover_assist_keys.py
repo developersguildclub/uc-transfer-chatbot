@@ -27,6 +27,7 @@ AGREEMENT_TYPES = ["Major"]
 
 
 def fetch_agreement_keys(receiving_id, sending_id, academic_year_id, agreement_type):
+    # Discovery fetches ASSIST agreement keys before full scraping.
     url = f"{BASE_URL}/for/{receiving_id}/to/{sending_id}/in/{academic_year_id}"
 
     response = requests.get(
@@ -50,6 +51,7 @@ def fetch_agreement_keys(receiving_id, sending_id, academic_year_id, agreement_t
 
 
 def save_agreement_keys(keys, receiving_id, sending_id, academic_year_id, agreement_type):
+    # Saved keys let scraper resume without repeating discovery.
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -99,6 +101,7 @@ def save_agreement_keys(keys, receiving_id, sending_id, academic_year_id, agreem
 
 
 def main():
+    # Batch entry point discovers keys for the selected UC campuses.
     setup_database()
 
     selected_institutions = [

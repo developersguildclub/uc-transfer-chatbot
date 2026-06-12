@@ -39,6 +39,7 @@ CORS(
     allow_headers=["Content-Type", CSRF_HEADER_NAME],
 )
 
+# Startup builds transfer tables and private app tables before routes run.
 setup_database()
 setup_app_database()
 
@@ -50,6 +51,7 @@ def index():
 
 @app.route("/search", methods=["GET"])
 def search():
+    # Search exposes parsed ASSIST rows for direct course lookup.
     try:
         to_school = request.args.get("to_school")
         major = request.args.get("major")
@@ -115,6 +117,7 @@ def search():
         return jsonify({"error": "Search request failed"}), 500
 
 
+# Request helpers keep auth routes strict about JSON and origins.
 def credentials_from_request():
     error = origin_error()
     if error:
@@ -159,6 +162,7 @@ def user_from_row(row):
     return {"id": row[0], "email": row[1], "email_verified": bool(row[2])}
 
 
+# Account tokens power email verification and password reset links.
 def create_account_token(cursor, user_id, purpose):
     now = int(time.time())
     token = secrets.token_urlsafe(32)
@@ -197,6 +201,7 @@ def account_token_user(cursor, token, purpose):
 
 
 def current_session():
+    # Session lookup turns a cookie into the current user payload.
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if not token:
         return None
@@ -237,6 +242,7 @@ def require_user():
 
 
 def require_write_user():
+    # Mutating app routes require both session cookie and CSRF token.
     error = origin_error()
     if error:
         return None, error
@@ -262,6 +268,7 @@ def set_csrf_cookie(response, csrf_token):
 
 
 def response_with_session(user):
+    # Signup and login share this path to issue session cookies.
     now = int(time.time())
     token = secrets.token_urlsafe(32)
     csrf_token = secrets.token_urlsafe(32)
@@ -293,6 +300,7 @@ def response_with_session(user):
 
 @app.route("/auth/signup", methods=["POST"])
 def signup():
+    # Signup creates the user, then returns a logged-in session.
     email, password, error = credentials_from_request()
     if error:
         return error
@@ -331,6 +339,7 @@ def signup():
 
 @app.route("/auth/login", methods=["POST"])
 def login():
+    # Login verifies credentials and returns a fresh session.
     email, password, error = credentials_from_request()
     if error:
         return error
@@ -359,6 +368,7 @@ def login():
 
 @app.route("/auth/change-password", methods=["POST"])
 def change_password():
+    # Password change keeps the current session and clears other sessions.
     session, error = require_write_user()
     if error:
         return error
@@ -399,6 +409,7 @@ def change_password():
 
 @app.route("/auth/email-verification/request", methods=["POST"])
 def request_email_verification():
+    # Verification request sends a one-hour link to the signed-in user.
     session, error = require_write_user()
     if error:
         return error
@@ -477,6 +488,7 @@ def confirm_email_verification():
 
 @app.route("/auth/password-reset/request", methods=["POST"])
 def request_password_reset():
+    # Reset request always answers generically to hide account existence.
     error = origin_error()
     if error:
         return error
@@ -526,6 +538,7 @@ def request_password_reset():
 
 @app.route("/auth/password-reset/confirm", methods=["POST"])
 def confirm_password_reset():
+    # Reset confirm consumes one token and clears every old session.
     error = origin_error()
     if error:
         return error
@@ -564,6 +577,7 @@ def confirm_password_reset():
 
 @app.route("/auth/logout", methods=["POST"])
 def logout():
+    # Logout deletes only the current browser session.
     session, error = require_write_user()
     if error:
         return error
@@ -582,6 +596,7 @@ def logout():
 
 @app.route("/auth/me", methods=["GET"])
 def auth_me():
+    # Auth status returns current user and usable CSRF token.
     session = current_session()
     if not session:
         return jsonify({"user": None, "csrfToken": None})
@@ -606,6 +621,7 @@ def auth_me():
 
 
 def conversation_title(text):
+    # Conversation titles use the first user message as compact history text.
     title = " ".join(text.split())
     if len(title) <= 48:
         return title
@@ -618,6 +634,7 @@ def conversation_from_row(row):
 
 
 def user_conversation(cursor, user_id, conversation_id):
+    # Conversation lookup is always scoped to the signed-in owner.
     cursor.execute(
         """
         SELECT id, title, updated_at
@@ -635,6 +652,7 @@ def user_conversation(cursor, user_id, conversation_id):
 
 @app.route("/conversations", methods=["GET"])
 def conversations():
+    # Conversation list returns saved chat metadata for sidebar history.
     session, error = require_user()
     if error:
         return error
@@ -662,6 +680,7 @@ def conversations():
 
 @app.route("/conversations/<int:conversation_id>", methods=["GET"])
 def get_conversation(conversation_id):
+    # Conversation load returns one owned chat with ordered messages.
     session, error = require_user()
     if error:
         return error
@@ -681,6 +700,7 @@ def get_conversation(conversation_id):
 
 @app.route("/conversations/<int:conversation_id>", methods=["DELETE"])
 def delete_conversation(conversation_id):
+    # Conversation delete removes one owned chat and its messages.
     session, error = require_write_user()
     if error:
         return error
@@ -705,6 +725,7 @@ def delete_conversation(conversation_id):
 
 
 def stored_messages(cursor, conversation_id):
+    # Stored messages rebuild model history in original order.
     cursor.execute(
         """
         SELECT role, content
@@ -719,6 +740,7 @@ def stored_messages(cursor, conversation_id):
 
 @app.route("/chat", methods=["POST"])
 def chat():
+    # Chat joins saved history, retrieval context, and model response.
     error = origin_error()
     if error:
         return error
@@ -835,6 +857,7 @@ def chat():
         return f"event: {event}\ndata: {json.dumps(payload)}\n\n"
 
     def generate():
+        # SSE keeps one frontend stream path for guests and saved chats.
         yield format_sse("message_start", {"conversation_id": conversation_id})
         yield format_sse("text_delta", {"text": ai_reply})
         yield format_sse("message_end", {})
