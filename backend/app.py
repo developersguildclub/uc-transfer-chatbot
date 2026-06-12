@@ -447,9 +447,13 @@ def stored_messages(cursor, conversation_id):
 
 @app.route("/chat", methods=["POST"])
 def chat():
-    session, error = require_write_user()
+    error = origin_error()
     if error:
         return error
+
+    session = current_session()
+    if session and not csrf_matches(session, request.headers.get(CSRF_HEADER_NAME)):
+        return jsonify({"error": "CSRF token required"}), 403
 
     data, error = json_body()
     if error:
@@ -462,20 +466,43 @@ def chat():
     message = message.strip()
 
     conversation_id = data.get("conversation_id")
-    if conversation_id is not None and not isinstance(conversation_id, int):
+    if conversation_id is not None and (
+        isinstance(conversation_id, bool) or not isinstance(conversation_id, int)
+    ):
         return jsonify({"error": "Expected conversation_id"}), 400
 
-    conn = get_app_connection()
-    cursor = conn.cursor()
-    if conversation_id is None:
+    if not session:
+        if conversation_id is not None:
+            return jsonify({"error": "Guest chats cannot use saved conversations"}), 400
+
+        history = data.get("messages")
+        if history is None:
+            prior_messages = []
+        elif isinstance(history, list):
+            prior_messages = []
+            for item in history:
+                if not isinstance(item, dict):
+                    return jsonify({"error": "Expected messages"}), 400
+
+                role = item.get("role")
+                content = item.get("content")
+                if role not in {"user", "assistant"} or not isinstance(content, str):
+                    return jsonify({"error": "Expected messages"}), 400
+
+                prior_messages.append({"role": role, "content": content})
+        else:
+            return jsonify({"error": "Expected messages"}), 400
+    elif conversation_id is None:
         prior_messages = []
     else:
+        conn = get_app_connection()
+        cursor = conn.cursor()
         conversation = user_conversation(cursor, session["user"]["id"], conversation_id)
         if not conversation:
             conn.close()
             return jsonify({"error": "Conversation not found"}), 404
         prior_messages = stored_messages(cursor, conversation_id)
-    conn.close()
+        conn.close()
 
     messages = [*prior_messages, {"role": "user", "content": message}]
 
@@ -485,51 +512,52 @@ def chat():
         app.logger.exception("Chat request failed")
         return jsonify({"error": "Chat request failed"}), 500
 
-    now = int(time.time())
-    conn = get_app_connection()
-    cursor = conn.cursor()
+    if session:
+        now = int(time.time())
+        conn = get_app_connection()
+        cursor = conn.cursor()
 
-    if conversation_id is None:
+        if conversation_id is None:
+            cursor.execute(
+                """
+                INSERT INTO conversations (user_id, title, created_at, updated_at)
+                VALUES (?, ?, ?, ?)
+            """,
+                (session["user"]["id"], conversation_title(message), now, now),
+            )
+            conversation_id = cursor.lastrowid
+            position = 0
+        else:
+            cursor.execute(
+                """
+                SELECT COALESCE(MAX(position), -1)
+                FROM conversation_messages
+                WHERE conversation_id = ?
+            """,
+                (conversation_id,),
+            )
+            position = cursor.fetchone()[0] + 1
+
         cursor.execute(
             """
-            INSERT INTO conversations (user_id, title, created_at, updated_at)
-            VALUES (?, ?, ?, ?)
+            UPDATE conversations
+            SET updated_at = ?
+            WHERE id = ?
         """,
-            (session["user"]["id"], conversation_title(message), now, now),
+            (now, conversation_id),
         )
-        conversation_id = cursor.lastrowid
-        position = 0
-    else:
-        cursor.execute(
+        cursor.executemany(
             """
-            SELECT COALESCE(MAX(position), -1)
-            FROM conversation_messages
-            WHERE conversation_id = ?
+            INSERT INTO conversation_messages (conversation_id, role, content, position, created_at)
+            VALUES (?, ?, ?, ?, ?)
         """,
-            (conversation_id,),
+            [
+                (conversation_id, "user", message, position, now),
+                (conversation_id, "assistant", ai_reply, position + 1, now),
+            ],
         )
-        position = cursor.fetchone()[0] + 1
-
-    cursor.execute(
-        """
-        UPDATE conversations
-        SET updated_at = ?
-        WHERE id = ?
-    """,
-        (now, conversation_id),
-    )
-    cursor.executemany(
-        """
-        INSERT INTO conversation_messages (conversation_id, role, content, position, created_at)
-        VALUES (?, ?, ?, ?, ?)
-    """,
-        [
-            (conversation_id, "user", message, position, now),
-            (conversation_id, "assistant", ai_reply, position + 1, now),
-        ],
-    )
-    conn.commit()
-    conn.close()
+        conn.commit()
+        conn.close()
 
     def format_sse(event, payload):
         return f"event: {event}\ndata: {json.dumps(payload)}\n\n"

@@ -89,6 +89,13 @@ function messageFromApi(message: ApiMessage): Message {
 	};
 }
 
+function messageToApi(message: Message): ApiMessage {
+	return {
+		role: message.role === 'bot' ? 'assistant' : 'user',
+		content: message.text
+	};
+}
+
 export default function ChatPage() {
 	const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
 	const [input, setInput] = useState('');
@@ -338,11 +345,6 @@ export default function ChatPage() {
 		const trimmed = input.trim();
 		if (!trimmed || isSending) return;
 
-		if (!user) {
-			openAuth('login');
-			return;
-		}
-
 		const nextMessages: Message[] = [...messages, { role: 'user', text: trimmed }];
 
 		setMessages(nextMessages);
@@ -401,11 +403,18 @@ export default function ChatPage() {
 		}
 
 		try {
+			const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+			if (user) headers['X-CSRF-Token'] = csrfToken;
+
 			const res = await fetch('/api/chat', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+				headers,
 				credentials: 'include',
-				body: JSON.stringify({ message: trimmed, conversation_id: activeConversationId })
+				body: JSON.stringify(
+					user
+						? { message: trimmed, conversation_id: activeConversationId }
+						: { message: trimmed, messages: messages.map(messageToApi) }
+				)
 			});
 
 			if (!res.ok) {
@@ -540,7 +549,7 @@ export default function ChatPage() {
 						</h2>
 						{!user ? (
 							<p className="rounded-xl border border-dashed border-[#cfd8e6] px-3 py-4 text-sm leading-6 text-[#667085]">
-								Log in to save chats.
+								Guest chats stay in this browser. Log in to save chats.
 							</p>
 						) : historyError ? (
 							<p className="rounded-xl border border-[#f3b9b9] bg-[#fff5f5] px-3 py-4 text-sm leading-6 text-[#9f1d1d]">
