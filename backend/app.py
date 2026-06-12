@@ -1,8 +1,5 @@
 import json
 
-from flask import Flask, request, jsonify, Response, stream_with_context
-from flask_cors import CORS
-from model import get_ai_response
 from database import setup_database
 from flask import Flask, Response, jsonify, request, stream_with_context
 from flask_cors import CORS
@@ -82,8 +79,9 @@ def search():
 
         return jsonify({"count": len(results), "results": results})
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        app.logger.exception("Search request failed")
+        return jsonify({"error": "Search request failed"}), 500
 
 
 @app.route("/chat", methods=["POST"])

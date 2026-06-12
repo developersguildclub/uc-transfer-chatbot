@@ -212,8 +212,8 @@ def get_ai_response(messages):
     return response_text(response)
 
 
-def stream_ai_response(user_message: str):
-    yield get_ai_response(user_message)
+def stream_ai_response(messages):
+    yield get_ai_response(messages)
 
 
 def response_text(response):
