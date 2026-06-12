@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 
 interface Message {
@@ -6,37 +6,58 @@ interface Message {
 	text: string;
 }
 
-const CHAT_MESSAGES_STORAGE_KEY = 'uc-transfer-chatbot:messages';
+interface User {
+	id: number;
+	email: string;
+}
+
+interface Conversation {
+	id: number;
+	title: string;
+	updated_at: number;
+}
+
+interface ApiMessage {
+	role: 'assistant' | 'user';
+	content: string;
+}
+
+type AuthMode = 'login' | 'signup';
+
 const REVEAL_INTERVAL_MS = 32;
 
 const INITIAL_MESSAGES: Message[] = [];
 
-function isMessage(value: unknown): value is Message {
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === 'object' && value !== null;
+}
+
+function isUser(value: unknown): value is User {
+	return isRecord(value) && typeof value.id === 'number' && typeof value.email === 'string';
+}
+
+function isConversation(value: unknown): value is Conversation {
 	return (
-		typeof value === 'object' &&
-		value !== null &&
-		'role' in value &&
-		'text' in value &&
-		(value.role === 'bot' || value.role === 'user') &&
-		typeof value.text === 'string'
+		isRecord(value) &&
+		typeof value.id === 'number' &&
+		typeof value.title === 'string' &&
+		typeof value.updated_at === 'number'
 	);
 }
 
-function loadStoredMessages() {
-	try {
-		const storedMessages = localStorage.getItem(CHAT_MESSAGES_STORAGE_KEY);
-		if (!storedMessages) return INITIAL_MESSAGES;
-
-		const parsedMessages: unknown = JSON.parse(storedMessages);
-		return Array.isArray(parsedMessages) && parsedMessages.every(isMessage)
-			? parsedMessages
-			: INITIAL_MESSAGES;
-	} catch {
-		return INITIAL_MESSAGES;
-	}
+function isApiMessage(value: unknown): value is ApiMessage {
+	return (
+		isRecord(value) &&
+		(value.role === 'assistant' || value.role === 'user') &&
+		typeof value.content === 'string'
+	);
 }
 
-function readTextDelta(rawEvent: string) {
+function errorMessage(data: unknown, fallback: string) {
+	return isRecord(data) && typeof data.error === 'string' ? data.error : fallback;
+}
+
+function readStreamEvent(rawEvent: string) {
 	let event = '';
 	let data = '';
 
@@ -52,56 +73,275 @@ function readTextDelta(rawEvent: string) {
 		}
 	}
 
-	if (event !== 'text_delta') {
-		return null;
-	}
-
 	const parsed: unknown = JSON.parse(data);
 
-	if (typeof parsed !== 'object' || parsed === null || !('text' in parsed)) {
-		throw new Error('Chat stream text was missing');
+	if (typeof parsed !== 'object' || parsed === null) {
+		throw new Error('Chat stream data was invalid');
 	}
 
-	if (typeof parsed.text !== 'string') {
-		throw new Error('Chat stream text was invalid');
-	}
-
-	return parsed.text;
+	return { event, data: parsed as Record<string, unknown> };
 }
 
-function conversationTitle(messages: Message[]) {
-	const firstUserMessage = messages.find((message) => message.role === 'user')?.text;
-
-	if (!firstUserMessage) return 'Current chat';
-	if (firstUserMessage.length <= 48) return firstUserMessage;
-
-	return `${firstUserMessage.slice(0, 45)}...`;
+function messageFromApi(message: ApiMessage): Message {
+	return {
+		role: message.role === 'assistant' ? 'bot' : 'user',
+		text: message.content
+	};
 }
 
 export default function ChatPage() {
-	const [messages, setMessages] = useState<Message[]>(loadStoredMessages);
+	const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
 	const [input, setInput] = useState('');
 	const [isSending, setIsSending] = useState(false);
+	const [user, setUser] = useState<User | null>(null);
+	const [csrfToken, setCsrfToken] = useState('');
+	const [conversations, setConversations] = useState<Conversation[]>([]);
+	const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+	const [historyError, setHistoryError] = useState('');
+	const [accountError, setAccountError] = useState('');
+	const [authMode, setAuthMode] = useState<AuthMode | null>(null);
+	const [authEmail, setAuthEmail] = useState('');
+	const [authPassword, setAuthPassword] = useState('');
+	const [authError, setAuthError] = useState('');
+	const [isAuthSending, setIsAuthSending] = useState(false);
 	const bottomRef = useRef<HTMLDivElement>(null);
+	const authDialogRef = useRef<HTMLFormElement>(null);
+	const authEmailRef = useRef<HTMLInputElement>(null);
+	const authReturnFocusRef = useRef<HTMLElement | null>(null);
+
+	const closeAuth = useCallback(() => {
+		setAuthMode(null);
+		authReturnFocusRef.current?.focus();
+	}, []);
+
+	useEffect(() => {
+		let active = true;
+
+		fetch('/api/auth/me', { credentials: 'include' })
+			.then(async (res) => {
+				if (!res.ok) return;
+
+				const data: unknown = await res.json();
+				if (!active) return;
+
+				setUser(isRecord(data) && isUser(data.user) ? data.user : null);
+				setCsrfToken(isRecord(data) && typeof data.csrfToken === 'string' ? data.csrfToken : '');
+				setAccountError('');
+			})
+			.catch(() => {
+				if (active) setAccountError('Could not check account status.');
+			});
+
+		return () => {
+			active = false;
+		};
+	}, []);
+
+	useEffect(() => {
+		if (!authMode) return;
+
+		authEmailRef.current?.focus();
+
+		function handleKeyDown(e: KeyboardEvent) {
+			const dialog = authDialogRef.current;
+			if (!dialog) return;
+
+			if (e.key === 'Escape') {
+				e.preventDefault();
+				closeAuth();
+				return;
+			}
+
+			if (e.key !== 'Tab') return;
+
+			const controls = Array.from(
+				dialog.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled])')
+			);
+			const first = controls[0];
+			const last = controls.at(-1);
+			if (!first || !last) return;
+
+			if (e.shiftKey && document.activeElement === first) {
+				e.preventDefault();
+				last.focus();
+			} else if (!e.shiftKey && document.activeElement === last) {
+				e.preventDefault();
+				first.focus();
+			}
+		}
+
+		document.addEventListener('keydown', handleKeyDown);
+		return () => document.removeEventListener('keydown', handleKeyDown);
+	}, [authMode, closeAuth]);
 
 	useEffect(() => {
 		bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
 	}, [messages]);
 
 	useEffect(() => {
-		localStorage.setItem(CHAT_MESSAGES_STORAGE_KEY, JSON.stringify(messages));
-	}, [messages]);
+		if (!user) {
+			return;
+		}
+
+		let active = true;
+
+		fetch('/api/conversations', { credentials: 'include' })
+			.then(async (res) => {
+				if (!res.ok) throw new Error('Conversation history failed');
+
+				const data = (await res.json()) as { conversations?: unknown };
+				if (!Array.isArray(data.conversations) || !data.conversations.every(isConversation)) {
+					throw new Error('Conversation history was invalid');
+				}
+
+				if (active) {
+					setConversations(data.conversations);
+					setHistoryError('');
+				}
+			})
+			.catch(() => {
+				if (active) setHistoryError('Could not load saved chats.');
+			});
+
+		return () => {
+			active = false;
+		};
+	}, [user]);
 
 	function handleReset() {
+		if (isSending) return;
+
 		setMessages(INITIAL_MESSAGES);
 		setInput('');
-		setIsSending(false);
-		localStorage.removeItem(CHAT_MESSAGES_STORAGE_KEY);
+		setActiveConversationId(null);
+	}
+
+	function openAuth(mode: AuthMode) {
+		authReturnFocusRef.current =
+			document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		setAuthMode(mode);
+		setAuthEmail('');
+		setAuthPassword('');
+		setAuthError('');
+	}
+
+	async function handleAuthSubmit(e: FormEvent<HTMLFormElement>) {
+		e.preventDefault();
+		if (!authMode || isAuthSending) return;
+
+		setIsAuthSending(true);
+		setAuthError('');
+
+		try {
+			const res = await fetch(`/api/auth/${authMode}`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				credentials: 'include',
+				body: JSON.stringify({ email: authEmail, password: authPassword })
+			});
+			const data: unknown = await res.json();
+
+			if (!res.ok || !isRecord(data) || !isUser(data.user)) {
+				setAuthError(errorMessage(data, 'Authentication failed'));
+				return;
+			}
+
+			setUser(data.user);
+			setCsrfToken(typeof data.csrfToken === 'string' ? data.csrfToken : '');
+			setAccountError('');
+			closeAuth();
+			setAuthEmail('');
+			setAuthPassword('');
+		} catch {
+			setAuthError('Authentication failed');
+		} finally {
+			setIsAuthSending(false);
+		}
+	}
+
+	async function handleLogout() {
+		try {
+			const res = await fetch('/api/auth/logout', {
+				method: 'POST',
+				headers: { 'X-CSRF-Token': csrfToken },
+				credentials: 'include'
+			});
+
+			if (!res.ok) {
+				setAccountError('Could not log out.');
+				return;
+			}
+
+			setUser(null);
+			setCsrfToken('');
+			setConversations([]);
+			setActiveConversationId(null);
+			setMessages(INITIAL_MESSAGES);
+			setHistoryError('');
+			setAccountError('');
+		} catch {
+			setAccountError('Could not log out.');
+		}
+	}
+
+	async function refreshConversations() {
+		if (!user) return;
+
+		try {
+			const res = await fetch('/api/conversations', { credentials: 'include' });
+			if (!res.ok) throw new Error('Conversation history failed');
+
+			const data = (await res.json()) as { conversations?: unknown };
+			if (!Array.isArray(data.conversations) || !data.conversations.every(isConversation)) {
+				throw new Error('Conversation history was invalid');
+			}
+
+			setConversations(data.conversations);
+			setHistoryError('');
+		} catch {
+			setHistoryError('Could not load saved chats.');
+		}
+	}
+
+	async function openConversation(conversationId: number) {
+		if (isSending) return;
+
+		try {
+			const res = await fetch(`/api/conversations/${conversationId}`, { credentials: 'include' });
+			if (!res.ok) {
+				setHistoryError('Could not open that chat.');
+				return;
+			}
+
+			const data = (await res.json()) as {
+				conversation?: unknown;
+				messages?: unknown;
+			};
+			if (
+				!isConversation(data.conversation) ||
+				!Array.isArray(data.messages) ||
+				!data.messages.every(isApiMessage)
+			) {
+				throw new Error('Conversation was invalid');
+			}
+
+			setActiveConversationId(data.conversation.id);
+			setMessages(data.messages.map(messageFromApi));
+			setInput('');
+			setHistoryError('');
+		} catch {
+			setHistoryError('Could not open that chat.');
+		}
 	}
 
 	async function handleSend() {
 		const trimmed = input.trim();
 		if (!trimmed || isSending) return;
+
+		if (!user) {
+			openAuth('login');
+			return;
+		}
 
 		const nextMessages: Message[] = [...messages, { role: 'user', text: trimmed }];
 
@@ -163,8 +403,9 @@ export default function ChatPage() {
 		try {
 			const res = await fetch('/api/chat', {
 				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: trimmed, messages: nextMessages })
+				headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
+				credentials: 'include',
+				body: JSON.stringify({ message: trimmed, conversation_id: activeConversationId })
 			});
 
 			if (!res.ok) {
@@ -188,10 +429,20 @@ export default function ChatPage() {
 				buffer = rawEvents.pop() ?? '';
 
 				for (const rawEvent of rawEvents) {
-					const text = readTextDelta(rawEvent);
+					const streamEvent = readStreamEvent(rawEvent);
 
-					if (text) {
-						streamedText += text;
+					if (
+						streamEvent.event === 'message_start' &&
+						typeof streamEvent.data.conversation_id === 'number'
+					) {
+						setActiveConversationId(streamEvent.data.conversation_id);
+					}
+
+					if (
+						streamEvent.event === 'text_delta' &&
+						typeof streamEvent.data.text === 'string'
+					) {
+						streamedText += streamEvent.data.text;
 						startReveal();
 					}
 				}
@@ -202,6 +453,7 @@ export default function ChatPage() {
 			streamDone = true;
 			revealText();
 			await revealDone;
+			await refreshConversations();
 		} catch {
 			if (revealTimer !== undefined) {
 				window.clearInterval(revealTimer);
@@ -235,6 +487,8 @@ export default function ChatPage() {
 						>
 							<img
 								src="/favicon.png"
+								width={36}
+								height={36}
 								className="h-9 w-9 rounded-xl transition duration-300 group-hover:scale-[1.04]"
 								alt="Logo of Developer's Guild"
 							/>
@@ -264,8 +518,9 @@ export default function ChatPage() {
 
 					<button
 						type="button"
-						className="group flex items-center justify-center gap-2 rounded-2xl border border-[#d8e0ec] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f5f] shadow-sm shadow-[#101828]/5 transition duration-150 hover:-translate-y-0.5 hover:border-[#0b2f5f] hover:bg-[#f8fbff] hover:shadow-md active:translate-y-0 active:scale-[0.99]"
+						className="group flex items-center justify-center gap-2 rounded-2xl border border-[#d8e0ec] bg-white px-4 py-3 text-sm font-semibold text-[#0b2f5f] shadow-sm shadow-[#101828]/5 transition duration-150 hover:-translate-y-0.5 hover:border-[#0b2f5f] hover:bg-[#f8fbff] hover:shadow-md active:translate-y-0 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:translate-y-0 disabled:hover:border-[#d8e0ec] disabled:hover:bg-white disabled:hover:shadow-sm"
 						onClick={handleReset}
+						disabled={isSending}
 					>
 						<span className="grid h-5 w-5 place-items-center rounded-full bg-[#e7eef8] text-base leading-none transition group-hover:bg-[#dce8f7]">
 							+
@@ -274,7 +529,7 @@ export default function ChatPage() {
 					</button>
 
 					<section
-						className="hidden min-h-0 flex-1 flex-col gap-2 md:flex"
+						className="flex min-h-0 max-h-44 flex-col gap-2 overflow-y-auto md:max-h-none md:flex-1"
 						aria-labelledby="history-heading"
 					>
 						<h2
@@ -283,16 +538,33 @@ export default function ChatPage() {
 						>
 							Chat history
 						</h2>
-						{/* TODO: Replace localStorage-only chat state with conversation persistence. */}
-						{/* TODO: Replace localStorage-only chat state with conversation persistence. */}
-						{hasMessages ? (
-							<button
-								type="button"
-								className="truncate rounded-2xl bg-[#e7eef8] px-3 py-2.5 text-left text-sm font-medium text-[#0b2f5f] transition hover:bg-[#dce8f7]"
-								onClick={() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' })}
-							>
-								{conversationTitle(messages)}
-							</button>
+						{!user ? (
+							<p className="rounded-xl border border-dashed border-[#cfd8e6] px-3 py-4 text-sm leading-6 text-[#667085]">
+								Log in to save chats.
+							</p>
+						) : historyError ? (
+							<p className="rounded-xl border border-[#f3b9b9] bg-[#fff5f5] px-3 py-4 text-sm leading-6 text-[#9f1d1d]">
+								{historyError}
+							</p>
+						) : conversations.length > 0 ? (
+							<div className="flex flex-col gap-2">
+								{conversations.map((conversation) => (
+									<button
+										key={conversation.id}
+										type="button"
+										className={`truncate rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+											conversation.id === activeConversationId
+												? 'bg-[#e7eef8] text-[#0b2f5f]'
+												: 'text-[#344054] hover:bg-[#edf3fb]'
+										}`}
+										onClick={() => openConversation(conversation.id)}
+										disabled={isSending}
+										aria-current={conversation.id === activeConversationId ? 'page' : undefined}
+									>
+										{conversation.title}
+									</button>
+								))}
+							</div>
 						) : (
 							<p className="rounded-xl border border-dashed border-[#cfd8e6] px-3 py-4 text-sm leading-6 text-[#667085]">
 								No conversations yet.
@@ -300,34 +572,151 @@ export default function ChatPage() {
 						)}
 					</section>
 
-					<div className="mt-auto hidden border-t border-[#e8edf5] pt-4 md:block">
-						{/* TODO: Place authenticated account/profile controls here after auth integration. */}
-					</div>
 				</div>
 			</aside>
 
 			<section className="main-panel-enter flex min-h-0 flex-1 flex-col bg-white">
 				<header className="sticky top-0 z-10 border-b border-[#edf1f6] bg-white/90 px-4 py-3 backdrop-blur sm:px-6">
-					<div className="mx-auto flex max-w-4xl justify-end">
+					<div className="mx-auto flex max-w-4xl flex-col items-end gap-2">
+						{accountError && (
+							<p
+								role="alert"
+								className="max-w-full rounded-xl border border-[#f3b9b9] bg-[#fff5f5] px-3 py-1.5 text-right text-xs font-medium text-[#9f1d1d]"
+							>
+								{accountError}
+							</p>
+						)}
 						<div className="flex shrink-0 items-center gap-2">
-							{/* TODO: Connect these controls to auth when auth backend exists. */}
-							<button
-								type="button"
-								className="rounded-full px-4 py-2 text-sm font-medium text-[#101828] opacity-60"
-								disabled
-							>
-								Log in
-							</button>
-							<button
-								type="button"
-								className="rounded-full bg-[#0b2f5f] px-4 py-2 text-sm font-semibold text-white opacity-60 shadow-sm shadow-[#0b2f5f]/15"
-								disabled
-							>
-								Sign up
-							</button>
+							{user ? (
+								<>
+									<span className="hidden max-w-56 truncate text-sm font-medium text-[#344054] sm:block">
+										{user.email}
+									</span>
+									<button
+										type="button"
+										className="rounded-full border border-[#d8e0ec] px-4 py-2 text-sm font-semibold text-[#0b2f5f] transition hover:border-[#0b2f5f] hover:bg-[#f8fbff]"
+										onClick={handleLogout}
+									>
+										Log out
+									</button>
+								</>
+							) : (
+								<>
+									<button
+										type="button"
+										className="rounded-full px-4 py-2 text-sm font-medium text-[#101828] transition hover:bg-[#f3f6fb]"
+										onClick={() => openAuth('login')}
+									>
+										Log in
+									</button>
+									<button
+										type="button"
+										className="rounded-full bg-[#0b2f5f] px-4 py-2 text-sm font-semibold text-white shadow-sm shadow-[#0b2f5f]/15 transition hover:bg-[#08264d]"
+										onClick={() => openAuth('signup')}
+									>
+										Sign up
+									</button>
+								</>
+							)}
 						</div>
 					</div>
 				</header>
+
+				{authMode && (
+					<div
+						className="fixed inset-0 z-30 flex items-center justify-center bg-[#101828]/30 px-4 backdrop-blur-sm"
+						onMouseDown={(e) => {
+							if (e.target === e.currentTarget) closeAuth();
+						}}
+					>
+						<form
+							ref={authDialogRef}
+							role="dialog"
+							aria-modal="true"
+							aria-labelledby="auth-title"
+							className="w-full max-w-sm rounded-2xl border border-[#d8e0ec] bg-white p-5 shadow-2xl shadow-[#101828]/20"
+							onSubmit={handleAuthSubmit}
+						>
+							<div className="flex items-center justify-between gap-4">
+								<h2 id="auth-title" className="text-lg font-semibold text-[#101828]">
+									{authMode === 'signup' ? 'Create account' : 'Log in'}
+								</h2>
+								<button
+									type="button"
+									className="grid h-9 w-9 place-items-center rounded-full text-xl leading-none text-[#667085] transition hover:bg-[#f3f6fb] hover:text-[#101828]"
+									aria-label="Close account form"
+									onClick={closeAuth}
+								>
+									×
+								</button>
+							</div>
+
+							<label className="mt-5 block text-sm font-medium text-[#344054]" htmlFor="auth-email">
+								Email
+							</label>
+							<input
+								ref={authEmailRef}
+								id="auth-email"
+								name="email"
+								className="mt-2 w-full rounded-xl border border-[#d8e0ec] px-3 py-2.5 text-sm text-[#101828] outline-none transition focus:border-[#0b2f5f] focus:ring-4 focus:ring-[#0b2f5f]/10"
+								type="email"
+								autoComplete="email"
+								value={authEmail}
+								onChange={(e) => setAuthEmail(e.target.value)}
+								aria-invalid={authError ? true : undefined}
+								aria-describedby={authError ? 'auth-error' : undefined}
+								required
+							/>
+
+							<label className="mt-4 block text-sm font-medium text-[#344054]" htmlFor="auth-password">
+								Password
+							</label>
+							<input
+								id="auth-password"
+								name="password"
+								className="mt-2 w-full rounded-xl border border-[#d8e0ec] px-3 py-2.5 text-sm text-[#101828] outline-none transition focus:border-[#0b2f5f] focus:ring-4 focus:ring-[#0b2f5f]/10"
+								type="password"
+								autoComplete={authMode === 'signup' ? 'new-password' : 'current-password'}
+								value={authPassword}
+								onChange={(e) => setAuthPassword(e.target.value)}
+								aria-invalid={authError ? true : undefined}
+								aria-describedby={authError ? 'auth-error' : undefined}
+								minLength={8}
+								required
+							/>
+
+							{authError && (
+								<p
+									id="auth-error"
+									role="alert"
+									className="mt-4 rounded-xl border border-[#f3b9b9] bg-[#fff5f5] px-3 py-2 text-sm text-[#9f1d1d]"
+								>
+									{authError}
+								</p>
+							)}
+
+							<button
+								type="submit"
+								className="mt-5 w-full rounded-xl bg-[#0b2f5f] px-4 py-3 text-sm font-semibold text-white shadow-sm shadow-[#0b2f5f]/15 transition hover:bg-[#08264d] disabled:cursor-not-allowed disabled:bg-[#bac6d7]"
+								disabled={isAuthSending || !authEmail.trim() || authPassword.length < 8}
+							>
+								{isAuthSending ? 'Working...' : authMode === 'signup' ? 'Sign up' : 'Log in'}
+							</button>
+
+							<button
+								type="button"
+								className="mt-3 w-full rounded-xl px-4 py-2 text-sm font-medium text-[#0b2f5f] transition hover:bg-[#f3f6fb]"
+								onClick={() => {
+									setAuthMode(authMode === 'signup' ? 'login' : 'signup');
+									setAuthError('');
+									setAuthPassword('');
+								}}
+							>
+								{authMode === 'signup' ? 'Log in instead' : 'Create an account'}
+							</button>
+						</form>
+					</div>
+				)}
 
 				<main className="flex-1 overflow-y-auto px-4 pt-8 pb-36 sm:px-6">
 					<div
@@ -363,6 +752,8 @@ export default function ChatPage() {
 								<div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border border-[#e0e7f2] bg-white shadow-lg shadow-[#101828]/5">
 									<img
 										src="/favicon.png"
+										width={40}
+										height={40}
 										className="h-10 w-10 rounded-xl"
 										alt="Logo of Developer's Guild"
 									/>
