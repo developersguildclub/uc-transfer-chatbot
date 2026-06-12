@@ -1,6 +1,7 @@
 import json
-import requests
 import time
+
+import requests
 from database import get_connection, setup_database
 
 ASSIST_API_URL = "https://prod.assistng.org/articulation/api/Agreements"
@@ -8,9 +9,7 @@ ASSIST_API_URL = "https://prod.assistng.org/articulation/api/Agreements"
 
 def fetch_assist_agreement(key):
     response = requests.get(
-        ASSIST_API_URL,
-        params={"Key": key},
-        headers={"accept": "application/json"}
+        ASSIST_API_URL, params={"Key": key}, headers={"accept": "application/json"}
     )
 
     print("Fetching:", response.url)
@@ -81,7 +80,8 @@ def save_assist_agreement(source_key, data):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT OR REPLACE INTO assist_agreements (
             source_url,
             from_school,
@@ -91,20 +91,18 @@ def save_assist_agreement(source_key, data):
             raw_json
         )
         VALUES (?, ?, ?, ?, ?, ?)
-    """, (
-        source_key,
-        from_school,
-        to_school,
-        major,
-        academic_year,
-        raw_json
-    ))
+    """,
+        (source_key, from_school, to_school, major, academic_year, raw_json),
+    )
 
-    cursor.execute("""
+    cursor.execute(
+        """
         UPDATE assist_agreement_keys
         SET scraped = 1
         WHERE agreement_key = ?
-    """, (source_key,))
+    """,
+        (source_key,),
+    )
 
     conn.commit()
     conn.close()
@@ -114,12 +112,15 @@ def get_unscraped_keys(limit=50):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT agreement_key
         FROM assist_agreement_keys
         WHERE scraped = 0
         LIMIT ?
-    """, (limit,))
+    """,
+        (limit,),
+    )
 
     rows = cursor.fetchall()
     conn.close()

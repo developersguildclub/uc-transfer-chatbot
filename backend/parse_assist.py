@@ -1,7 +1,9 @@
 import json
 import re
 from html import unescape
+
 from database import get_connection, setup_database
+
 
 def clean_html_text(text):
     if not text:
@@ -59,13 +61,7 @@ def build_template_cell_title_map(template_assets):
         except Exception:
             template_assets = []
 
-    assets = sorted(
-        template_assets,
-        key=lambda a: (
-            a.get("area", ""),
-            a.get("position", 0)
-        )
-    )
+    assets = sorted(template_assets, key=lambda a: (a.get("area", ""), a.get("position", 0)))
 
     cell_title_map = {}
     current_requirement_title = ""
@@ -107,6 +103,7 @@ def build_template_cell_title_map(template_assets):
 
     return cell_title_map
 
+
 def extract_requirement_instruction(section):
     attributes = section.get("receivingAttributes", [])
     texts = []
@@ -123,7 +120,7 @@ def extract_requirement_instruction(section):
         "course",
         "Course",
         "courseGroup",
-        "CourseGroup"
+        "CourseGroup",
     }
 
     for attr in attributes:
@@ -146,6 +143,7 @@ def extract_requirement_instruction(section):
 
     return " | ".join(dict.fromkeys(texts))
 
+
 def format_course(course):
     prefix = course.get("prefix", "")
     number = course.get("courseNumber", "")
@@ -157,6 +155,7 @@ def format_course(course):
         return f"{course_code} - {title}".strip(" -")
 
     return course_code
+
 
 # UC courses can be articulated as either single courses or series of courses.
 def extract_receiving_side(articulation):
@@ -173,7 +172,7 @@ def extract_receiving_side(articulation):
             "uc_prefix": uc_prefix,
             "uc_number": uc_number,
             "uc_title": uc_title,
-            "receiving_courses_text": receiving_text
+            "receiving_courses_text": receiving_text,
         }
 
     # Case 2: UC course series
@@ -195,7 +194,7 @@ def extract_receiving_side(articulation):
             "uc_prefix": "",
             "uc_number": "",
             "uc_title": series_name,
-            "receiving_courses_text": receiving_text
+            "receiving_courses_text": receiving_text,
         }
     # Case 3: Breadth / General Education area
     if articulation_type == "GeneralEducation":
@@ -218,9 +217,9 @@ def extract_receiving_side(articulation):
             "uc_prefix": "",
             "uc_number": "",
             "uc_title": receiving_text,
-            "receiving_courses_text": receiving_text
+            "receiving_courses_text": receiving_text,
         }
-    
+
     # Case 4: Requirement rows, such as Reading & Composition A/B
     if articulation_type == "Requirement":
         possible_fields = [
@@ -294,7 +293,7 @@ def extract_receiving_side(articulation):
             "uc_prefix": "",
             "uc_number": "",
             "uc_title": receiving_text,
-            "receiving_courses_text": receiving_text
+            "receiving_courses_text": receiving_text,
         }
 
     # Fallback for unsupported types
@@ -303,8 +302,9 @@ def extract_receiving_side(articulation):
         "uc_prefix": "",
         "uc_number": "",
         "uc_title": "",
-        "receiving_courses_text": ""
+        "receiving_courses_text": "",
     }
+
 
 def generate_requirement_instruction(group_conjunction, course_groups):
     """
@@ -319,11 +319,13 @@ def generate_requirement_instruction(group_conjunction, course_groups):
 
     return ""
 
+
 def extract_course_name(course):
     prefix = course.get("prefix", "")
     number = course.get("courseNumber", "")
     title = course.get("courseTitle", "")
     return prefix, number, title
+
 
 def extract_notes(course):
     attributes = course.get("attributes", [])
@@ -345,6 +347,7 @@ def extract_notes(course):
 
     return " | ".join(notes)
 
+
 def extract_section_title(section, articulation):
     """
     Tries to extract a human-readable section title like:
@@ -364,12 +367,14 @@ def extract_section_title(section, articulation):
     # Requirement type may contain useful names
     requirement = articulation.get("requirement")
     if isinstance(requirement, dict):
-        possible_values.extend([
-            requirement.get("title"),
-            requirement.get("name"),
-            requirement.get("label"),
-            requirement.get("description"),
-        ])
+        possible_values.extend(
+            [
+                requirement.get("title"),
+                requirement.get("name"),
+                requirement.get("label"),
+                requirement.get("description"),
+            ]
+        )
 
     # General Education type
     ge_area = articulation.get("generalEducationArea")
@@ -395,13 +400,15 @@ def extract_section_title(section, articulation):
 
     for attr in receiving_attributes:
         if isinstance(attr, dict):
-            possible_values.extend([
-                attr.get("content"),
-                attr.get("description"),
-                attr.get("label"),
-                attr.get("name"),
-                attr.get("title"),
-            ])
+            possible_values.extend(
+                [
+                    attr.get("content"),
+                    attr.get("description"),
+                    attr.get("label"),
+                    attr.get("name"),
+                    attr.get("title"),
+                ]
+            )
         elif isinstance(attr, str):
             possible_values.append(attr)
 
@@ -431,11 +438,14 @@ def extract_section_title(section, articulation):
 
     return ""
 
+
 def has_any(text, phrases):
     return any(phrase in text for phrase in phrases)
 
 
-def infer_requirement_category(section_title="", requirement_instruction="", notes="", receiving_type=""):
+def infer_requirement_category(
+    section_title="", requirement_instruction="", notes="", receiving_type=""
+):
     """
     Conservative classification for ASSIST sections.
 
@@ -451,11 +461,13 @@ def infer_requirement_category(section_title="", requirement_instruction="", not
     - unknown
     """
 
-    combined_text = " ".join([
-        section_title or "",
-        requirement_instruction or "",
-        notes or "",
-    ]).lower()
+    combined_text = " ".join(
+        [
+            section_title or "",
+            requirement_instruction or "",
+            notes or "",
+        ]
+    ).lower()
 
     combined_text = " ".join(combined_text.split())
 
@@ -468,10 +480,7 @@ def infer_requirement_category(section_title="", requirement_instruction="", not
         r"recommended, but not required",
     ]
 
-    has_not_required = any(
-        re.search(pattern, combined_text)
-        for pattern in not_required_patterns
-    )
+    has_not_required = any(re.search(pattern, combined_text) for pattern in not_required_patterns)
 
     # recommended categories first so "recommended but not required"
     # does not get misclassified as required.
@@ -483,7 +492,7 @@ def infer_requirement_category(section_title="", requirement_instruction="", not
 
     if "highly recommended" in combined_text:
         return "highly_recommended"
-    
+
     # Required / admission categories
     required_for_admission_phrases = [
         "required for admission",
@@ -542,7 +551,7 @@ def infer_requirement_category(section_title="", requirement_instruction="", not
 
     if has_any(combined_text, breadth_phrases):
         return "breadth_requirement"
-    
+
     if receiving_type == "GeneralEducation":
         return "breadth_requirement"
 
@@ -550,6 +559,7 @@ def infer_requirement_category(section_title="", requirement_instruction="", not
         return "recommended"
 
     return "unknown"
+
 
 def parse_and_save_courses():
     setup_database()
@@ -572,10 +582,13 @@ def parse_and_save_courses():
     total_saved = 0
 
     for agreement_id, raw_json in rows:
-        cursor.execute("""
+        cursor.execute(
+            """
             DELETE FROM articulation_courses
             WHERE agreement_id = ?
-        """, (agreement_id,))
+        """,
+            (agreement_id,),
+        )
 
         seen_courses = set()
 
@@ -598,9 +611,8 @@ def parse_and_save_courses():
 
             template_cell_id = section.get("templateCellId", "")
 
-            section_title = (
-                template_cell_title_map.get(template_cell_id)
-                or extract_section_title(section, articulation)
+            section_title = template_cell_title_map.get(template_cell_id) or extract_section_title(
+                section, articulation
             )
 
             receiving_side = extract_receiving_side(articulation)
@@ -609,7 +621,7 @@ def parse_and_save_courses():
             uc_number = receiving_side["uc_number"]
             uc_title = receiving_side["uc_title"]
             receiving_courses_text = receiving_side["receiving_courses_text"]
-            
+
             sending = articulation.get("sendingArticulation", {})
             course_groups = sending.get("items", [])
 
@@ -623,8 +635,7 @@ def parse_and_save_courses():
 
             if not requirement_instruction:
                 requirement_instruction = generate_requirement_instruction(
-                    group_conjunction,
-                    course_groups
+                    group_conjunction, course_groups
                 )
 
             for group in course_groups:
@@ -638,10 +649,10 @@ def parse_and_save_courses():
                     cc_prefix, cc_number, cc_title = extract_course_name(cc_course)
                     notes = extract_notes(cc_course)
                     requirement_category = infer_requirement_category(
-                            section_title=section_title,
-                            requirement_instruction=requirement_instruction,
-                            notes=notes,
-                            receiving_type=receiving_type
+                        section_title=section_title,
+                        requirement_instruction=requirement_instruction,
+                        notes=notes,
+                        receiving_type=receiving_type,
                     )
 
                     course_key = (
@@ -651,15 +662,16 @@ def parse_and_save_courses():
                         cc_prefix,
                         cc_number,
                         group_position,
-                        course_position
+                        course_position,
                     )
 
                     if course_key in seen_courses:
                         continue
 
                     seen_courses.add(course_key)
-                    
-                    cursor.execute("""
+
+                    cursor.execute(
+                        """
                         INSERT INTO articulation_courses (
                             agreement_id,
                             uc_prefix,
@@ -680,33 +692,36 @@ def parse_and_save_courses():
                             receiving_courses_text
                         )
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (
-                        agreement_id,
-                        uc_prefix,
-                        uc_number,
-                        uc_title,
-                        cc_prefix,
-                        cc_number,
-                        cc_title,
-                        group_position,
-                        course_position,
-                        group_conjunction,
-                        course_conjunction,
-                        requirement_instruction,
-                        requirement_category,
-                        section_title,
-                        notes,
-                        receiving_type,
-                        receiving_courses_text
-                    ))
+                    """,
+                        (
+                            agreement_id,
+                            uc_prefix,
+                            uc_number,
+                            uc_title,
+                            cc_prefix,
+                            cc_number,
+                            cc_title,
+                            group_position,
+                            course_position,
+                            group_conjunction,
+                            course_conjunction,
+                            requirement_instruction,
+                            requirement_category,
+                            section_title,
+                            notes,
+                            receiving_type,
+                            receiving_courses_text,
+                        ),
+                    )
 
                     total_saved += 1
 
     conn.commit()
     conn.close()
 
-    print(f"Done parsing all agreements.")
+    print("Done parsing all agreements.")
     print(f"Saved {total_saved} articulated course rows.")
+
 
 if __name__ == "__main__":
     parse_and_save_courses()

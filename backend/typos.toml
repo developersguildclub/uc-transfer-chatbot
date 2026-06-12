@@ -1,0 +1,6 @@
+[files]
+extend-exclude = [
+    ".env",
+    ".env.*",
+    "transfer.db",
+]

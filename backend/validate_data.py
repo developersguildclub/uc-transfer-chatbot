@@ -3,10 +3,12 @@ from database import get_connection
 conn = get_connection()
 cursor = conn.cursor()
 
+
 def print_count(label, query):
     cursor.execute(query)
     count = cursor.fetchone()[0]
     print(f"{label}: {count}")
+
 
 def print_group_counts(title, query):
     print(f"\n{title}")
@@ -16,6 +18,7 @@ def print_group_counts(title, query):
     for value, count in rows:
         value = value if value else "(blank)"
         print(f"  {value}: {count}")
+
 
 def print_samples(title, query, params=None, limit=10):
     print(f"\n{title}")
@@ -37,6 +40,7 @@ def print_samples(title, query, params=None, limit=10):
     for row in rows:
         print(" ", row)
 
+
 print("=== Data Validation Summary ===")
 
 print_count(
@@ -49,7 +53,7 @@ print_count(
         AND (uc_course_number IS NULL OR uc_course_number = '')
         AND (receiving_courses_text IS NULL OR receiving_courses_text = '')
         AND (uc_course_title IS NULL OR uc_course_title = '')
-    """
+    """,
 )
 
 print_count(
@@ -61,7 +65,7 @@ print_count(
        OR cc_prefix = ''
        OR cc_course_number IS NULL
        OR cc_course_number = ''
-    """
+    """,
 )
 
 print_count(
@@ -72,7 +76,7 @@ print_count(
     WHERE academic_year IS NULL
        OR academic_year = ''
        OR academic_year = 'Unknown year'
-    """
+    """,
 )
 
 print_count(
@@ -82,7 +86,7 @@ print_count(
     FROM articulation_courses
     WHERE requirement_instruction IS NULL
        OR requirement_instruction = ''
-    """
+    """,
 )
 
 print_group_counts(
@@ -92,7 +96,7 @@ print_group_counts(
     FROM articulation_courses
     GROUP BY receiving_type
     ORDER BY COUNT(*) DESC
-    """
+    """,
 )
 
 print_group_counts(
@@ -102,7 +106,7 @@ print_group_counts(
     FROM articulation_courses
     GROUP BY requirement_category
     ORDER BY COUNT(*) DESC
-    """
+    """,
 )
 
 print_group_counts(
@@ -112,7 +116,7 @@ print_group_counts(
     FROM assist_agreements
     GROUP BY to_school
     ORDER BY COUNT(*) DESC
-    """
+    """,
 )
 
 print_samples(
@@ -136,7 +140,7 @@ print_samples(
     WHERE ac.requirement_category IS NULL
        OR ac.requirement_category = ''
        OR ac.requirement_category = 'unknown'
-    """
+    """,
 )
 
 print_samples(
@@ -161,7 +165,7 @@ print_samples(
        OR ac.requirement_category = ''
        OR ac.requirement_category = 'unknown'
     LIMIT 2
-    """
+    """,
 )
 
 conn.close()

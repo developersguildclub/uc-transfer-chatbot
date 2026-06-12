@@ -3,7 +3,8 @@ from database import get_connection
 conn = get_connection()
 cursor = conn.cursor()
 
-cursor.execute("""
+cursor.execute(
+    """
     SELECT
         ac.agreement_id,
         aa.to_school,
@@ -34,7 +35,9 @@ cursor.execute("""
         ac.uc_course_number,
         ac.group_position,
         ac.course_position
-""", ("%Irvine%", "%Computer Science%"))
+""",
+    ("%Irvine%", "%Computer Science%"),
+)
 
 rows = cursor.fetchall()
 conn.close()
@@ -66,7 +69,7 @@ for row in rows:
         group_conj,
         course_conj,
         requirement_instruction,
-        notes
+        notes,
     ) = row
 
     row_key = (
@@ -79,7 +82,7 @@ for row in rows:
         cc_num,
         cc_title,
         group_pos,
-        course_pos
+        course_pos,
     )
 
     if row_key in seen_rows:
@@ -87,21 +90,9 @@ for row in rows:
 
     seen_rows.add(row_key)
 
-    course_key = (
-        agreement_id,
-        uc_prefix,
-        uc_num,
-        uc_title,
-        receiving_courses_text
-    )
+    course_key = (agreement_id, uc_prefix, uc_num, uc_title, receiving_courses_text)
 
-    group_key = (
-        agreement_id,
-        uc_prefix,
-        uc_num,
-        receiving_courses_text,
-        group_pos
-    )
+    group_key = (agreement_id, uc_prefix, uc_num, receiving_courses_text, group_pos)
 
     if course_key != current_course_key:
         print()
@@ -140,14 +131,7 @@ for row in rows:
         print(f"{prefix_word}No Course Articulated")
 
     if notes:
-        note_key = (
-            agreement_id,
-            uc_prefix,
-            uc_num,
-            receiving_courses_text,
-            group_pos,
-            notes
-        )
+        note_key = (agreement_id, uc_prefix, uc_num, receiving_courses_text, group_pos, notes)
 
         if note_key not in printed_notes:
             print(f"    Note: {notes}")

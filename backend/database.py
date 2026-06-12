@@ -4,8 +4,10 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = BASE_DIR / "transfer.db"
 
+
 def get_connection():
     return sqlite3.connect(DB_PATH)
+
 
 def setup_database():
     conn = get_connection()
@@ -67,17 +69,20 @@ def setup_database():
         )
         """)
 
-    cursor.execute("""
+    cursor.execute(
+        """
         INSERT INTO transfer_info (question_keyword, answer)
         SELECT ?, ?
         WHERE NOT EXISTS (
             SELECT 1 FROM transfer_info WHERE question_keyword = ?
         )
-    """, (
-        "gpa",
-        "Most UC campuses recommend a competitive GPA, but exact GPA expectations depend on the campus and major.",
-        "gpa"
-    ))
+    """,
+        (
+            "gpa",
+            "Most UC campuses recommend a competitive GPA, but exact GPA expectations depend on the campus and major.",
+            "gpa",
+        ),
+    )
 
     conn.commit()
     conn.close()

@@ -58,7 +58,7 @@ for row in rows[:100]:
         group_conj,
         course_conj,
         requirement_instruction,
-        notes
+        notes,
     ) = row
 
     receiving_side = receiving_courses_text

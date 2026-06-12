@@ -1,0 +1,33 @@
+default_stages:
+  - pre-commit
+  - manual
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.0
+    hooks:
+      - id: ruff-check
+        name: ruff check backend
+        args: [--config, backend/ruff.toml, --fix]
+        files: ^backend/.*\.py$
+      - id: ruff-format
+        name: ruff format backend
+        args: [--config, backend/ruff.toml]
+        files: ^backend/.*\.py$
+
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.43.5
+    hooks:
+      - id: typos
+        name: typos backend
+        args: [--config, backend/typos.toml, --force-exclude]
+        files: ^backend/.*\.py$
+
+  - repo: local
+    hooks:
+      - id: backend-lazy-imports
+        name: check backend lazy imports
+        entry: python backend/tools/check_lazy_imports.py
+        language: python
+        pass_filenames: false
+        files: ^backend/(app|model)\.py$|^backend/tools/check_lazy_imports\.py$

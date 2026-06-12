@@ -11,10 +11,7 @@ for school in institutions:
     names = school.get("names", [])
 
     # Get the most recent visible name
-    visible_names = [
-        n for n in names
-        if not n.get("hideInList", False)
-    ]
+    visible_names = [n for n in names if not n.get("hideInList", False)]
 
     if not visible_names:
         continue

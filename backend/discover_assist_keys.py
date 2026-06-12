@@ -1,6 +1,7 @@
-import requests
-import time
 import json
+import time
+
+import requests
 from database import get_connection, setup_database
 
 BASE_URL = "https://prod.assistng.org/articulation/api/Agreements/Published"
@@ -32,10 +33,7 @@ def fetch_agreement_keys(receiving_id, sending_id, academic_year_id, agreement_t
     url = f"{BASE_URL}/for/{receiving_id}/to/{sending_id}/in/{academic_year_id}"
 
     response = requests.get(
-        url,
-        params={"types": agreement_type},
-        headers={"accept": "application/json"},
-        timeout=30
+        url, params={"types": agreement_type}, headers={"accept": "application/json"}, timeout=30
     )
 
     print("Fetching keys:", response.url)
@@ -79,7 +77,8 @@ def save_agreement_keys(keys, receiving_id, sending_id, academic_year_id, agreem
             print("Skipping item with no key:", item)
             continue
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT OR IGNORE INTO assist_agreement_keys (
                 academic_year_id,
                 sending_institution_id,
@@ -90,14 +89,9 @@ def save_agreement_keys(keys, receiving_id, sending_id, academic_year_id, agreem
                 scraped
             )
             VALUES (?, ?, ?, ?, ?, ?, 0)
-        """, (
-            academic_year_id,
-            sending_id,
-            receiving_id,
-            agreement_type,
-            label,
-            agreement_key
-        ))
+        """,
+            (academic_year_id, sending_id, receiving_id, agreement_type, label, agreement_key),
+        )
 
         saved_count += cursor.rowcount
 
@@ -111,8 +105,7 @@ def main():
     setup_database()
 
     selected_institutions = [
-        school for school in RECEIVING_INSTITUTIONS
-        if school["name"] in SCHOOLS_TO_RUN
+        school for school in RECEIVING_INSTITUTIONS if school["name"] in SCHOOLS_TO_RUN
     ]
 
     if not selected_institutions:
@@ -128,18 +121,11 @@ def main():
     for receiving in selected_institutions:
         for agreement_type in AGREEMENT_TYPES:
             keys = fetch_agreement_keys(
-                receiving["id"],
-                SENDING_INSTITUTION_ID,
-                ACADEMIC_YEAR_ID,
-                agreement_type
+                receiving["id"], SENDING_INSTITUTION_ID, ACADEMIC_YEAR_ID, agreement_type
             )
 
             saved = save_agreement_keys(
-                keys,
-                receiving["id"],
-                SENDING_INSTITUTION_ID,
-                ACADEMIC_YEAR_ID,
-                agreement_type
+                keys, receiving["id"], SENDING_INSTITUTION_ID, ACADEMIC_YEAR_ID, agreement_type
             )
 
             total_saved += saved

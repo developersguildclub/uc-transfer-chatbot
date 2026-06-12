@@ -1,5 +1,6 @@
 from database import get_connection
 
+
 def search_articulations(to_school=None, major=None, receiving=None, cc_course=None, limit=50):
     conn = get_connection()
     cursor = conn.cursor()
@@ -78,6 +79,7 @@ def search_articulations(to_school=None, major=None, receiving=None, cc_course=N
 
     return rows
 
+
 def get_valid_schools():
     conn = get_connection()
     cursor = conn.cursor()
@@ -91,6 +93,7 @@ def get_valid_schools():
     conn.close()
 
     return [row[0] for row in rows]
+
 
 def get_valid_major():
     conn = get_connection()
@@ -106,6 +109,7 @@ def get_valid_major():
 
     return [row[0] for row in rows]
 
+
 def get_valid_receiving_courses():
     conn = get_connection()
     cursor = conn.cursor()
@@ -119,6 +123,7 @@ def get_valid_receiving_courses():
     rows = cursor.fetchall()
     conn.close()
     return [row[0] for row in rows]
+
 
 def get_valid_cc_courses():
     conn = get_connection()
