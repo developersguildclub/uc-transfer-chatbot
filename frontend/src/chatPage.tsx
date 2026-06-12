@@ -224,21 +224,43 @@ export default function ChatPage() {
 	const hasMessages = messages.length > 0;
 
 	return (
-		<div className="flex min-h-dvh flex-col bg-white text-[#101828] md:flex-row">
-			<aside className="flex border-b border-[#e8edf5] bg-[#f7f8fb] p-3 md:min-h-dvh md:w-72 md:flex-col md:border-r md:border-b-0">
+		<div className="app-shell-enter flex min-h-dvh flex-col bg-white text-[#101828] md:flex-row">
+			<aside className="sidebar-enter flex border-b border-[#e3e8f0] bg-[#f7f8fb] p-3 md:min-h-dvh md:w-72 md:flex-col md:border-r md:border-b-0">
 				<div className="flex w-full min-w-0 flex-col gap-4">
-					<a
-						href="/"
-						className="group flex items-center gap-3 rounded-2xl px-2 py-1.5 text-sm font-semibold text-[#101828] transition hover:bg-white"
-						aria-label="UC Transfer Advisor home"
-					>
-						<img
-							src="/favicon.png"
-							className="h-9 w-9 rounded-xl transition group-hover:scale-[1.03]"
-							alt="Logo of Developer's Guild"
-						/>
-						<span>UC Transfer Advisor</span>
-					</a>
+					<div className="brand-card rounded-3xl border border-transparent p-2">
+						<a
+							href="/"
+							className="group flex items-center gap-3 rounded-2xl text-sm font-semibold text-[#101828] transition hover:text-[#0b2f5f]"
+							aria-label="UC Transfer Chatbot home"
+						>
+							<img
+								src="/favicon.png"
+								className="h-9 w-9 rounded-xl transition duration-300 group-hover:scale-[1.04]"
+								alt="Logo of Developer's Guild"
+							/>
+							<span>UC Transfer Chatbot</span>
+						</a>
+						<nav className="mt-4 flex flex-col gap-2" aria-label="External links">
+							<a
+								href="https://developersguild.vercel.app/"
+								className="sidebar-link-tab group"
+								target="_blank"
+								rel="noreferrer"
+							>
+								<span>visit our website!</span>
+								<span aria-hidden="true">-&gt;</span>
+							</a>
+							<a
+								href="https://github.com/developersguildclub/uc-transfer-chatbot"
+								className="sidebar-link-tab sidebar-link-tab-small group"
+								target="_blank"
+								rel="noreferrer"
+							>
+								<span>star this repo!</span>
+								<span aria-hidden="true">-&gt;</span>
+							</a>
+						</nav>
+					</div>
 
 					<button
 						type="button"
@@ -257,7 +279,7 @@ export default function ChatPage() {
 					>
 						<h2
 							id="history-heading"
-							className="px-2 pt-2 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-[#758195]"
+							className="px-2 pt-2 text-[0.68rem] font-semibold tracking-[0.16em] text-[#758195] uppercase"
 						>
 							Chat history
 						</h2>
@@ -284,7 +306,7 @@ export default function ChatPage() {
 				</div>
 			</aside>
 
-			<section className="flex min-h-0 flex-1 flex-col bg-white">
+			<section className="main-panel-enter flex min-h-0 flex-1 flex-col bg-white">
 				<header className="sticky top-0 z-10 border-b border-[#edf1f6] bg-white/90 px-4 py-3 backdrop-blur sm:px-6">
 					<div className="mx-auto flex max-w-4xl justify-end">
 						<div className="flex shrink-0 items-center gap-2">
@@ -307,7 +329,7 @@ export default function ChatPage() {
 					</div>
 				</header>
 
-				<main className="flex-1 overflow-y-auto px-4 pb-36 pt-8 sm:px-6">
+				<main className="flex-1 overflow-y-auto px-4 pt-8 pb-36 sm:px-6">
 					<div
 						className={`mx-auto flex min-h-full max-w-4xl flex-col ${
 							hasMessages ? 'justify-end gap-6' : 'justify-center'
@@ -321,7 +343,7 @@ export default function ChatPage() {
 											AI
 										</div>
 										<div
-											className={`assistant-message min-w-0 max-w-[min(44rem,100%)] rounded-[1.35rem] border border-[#e3e8f0] bg-[#f8fafc] px-4 py-3 text-sm leading-7 text-[#101828] shadow-sm shadow-[#101828]/5 ${
+											className={`assistant-message max-w-[min(44rem,100%)] min-w-0 rounded-[1.35rem] border border-[#e3e8f0] bg-[#f8fafc] px-4 py-3 text-sm leading-7 text-[#101828] shadow-sm shadow-[#101828]/5 ${
 												isSending && i === messages.length - 1 ? 'streaming-bubble' : ''
 											}`}
 										>
@@ -337,7 +359,7 @@ export default function ChatPage() {
 								)
 							)
 						) : (
-							<section className="mx-auto w-full max-w-3xl text-center">
+							<section className="hero-enter mx-auto w-full max-w-3xl text-center">
 								<div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl border border-[#e0e7f2] bg-white shadow-lg shadow-[#101828]/5">
 									<img
 										src="/favicon.png"
@@ -345,11 +367,11 @@ export default function ChatPage() {
 										alt="Logo of Developer's Guild"
 									/>
 								</div>
-								<p className="text-sm font-semibold text-[#0b2f5f]">UC Transfer Advisor</p>
-								<h1 className="mt-3 text-balance text-4xl font-semibold tracking-tight text-[#101828] sm:text-6xl">
+								<p className="text-sm font-semibold text-[#0b2f5f]">UC Transfer Chatbot</p>
+								<h1 className="mt-3 text-4xl font-semibold tracking-tight text-balance text-[#101828] sm:text-6xl">
 									What should we figure out first?
 								</h1>
-								<p className="mx-auto mt-5 max-w-xl text-pretty text-base leading-7 text-[#667085]">
+								<p className="mx-auto mt-5 max-w-xl text-base leading-7 text-pretty text-[#667085]">
 									Ask about transfer courses, campus requirements, ASSIST.org articulation, or what
 									to clarify with a counselor.
 								</p>
@@ -371,9 +393,9 @@ export default function ChatPage() {
 					</div>
 				</main>
 
-				<footer className="sticky bottom-0 border-t border-[#edf1f6] bg-white/90 px-4 py-4 backdrop-blur-xl sm:px-6">
+				<footer className="composer-enter sticky bottom-0 border-t border-[#edf1f6] bg-white/90 px-4 py-4 backdrop-blur-xl sm:px-6">
 					<form
-						className="mx-auto flex max-w-4xl items-center gap-3 rounded-[1.75rem] border border-[#d7deea] bg-white p-2 shadow-2xl shadow-[#101828]/10 transition duration-150 hover:border-[#c9d4e5] focus-within:-translate-y-0.5 focus-within:border-[#0b2f5f] focus-within:ring-4 focus-within:ring-[#0b2f5f]/10"
+						className="mx-auto flex max-w-4xl items-center gap-3 rounded-[1.75rem] border border-[#d7deea] bg-white p-2 shadow-2xl shadow-[#101828]/10 transition duration-150 focus-within:-translate-y-0.5 focus-within:border-[#0b2f5f] focus-within:ring-4 focus-within:ring-[#0b2f5f]/10 hover:border-[#c9d4e5]"
 						onSubmit={handleSubmit}
 					>
 						<label className="sr-only" htmlFor="chat-composer">
