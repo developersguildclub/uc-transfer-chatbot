@@ -21,10 +21,7 @@ RECEIVING_INSTITUTIONS = [
     {"id": 132, "name": "UC Santa Cruz"},
 ]
 
-SCHOOLS_TO_RUN = [
-    "UC Santa Barbara",
-    "UC Santa Cruz",
-]
+SCHOOLS_TO_RUN = [school["name"] for school in RECEIVING_INSTITUTIONS]
 
 AGREEMENT_TYPES = ["Major"]
 

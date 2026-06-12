@@ -1,5 +1,8 @@
 import json
 
+from flask import Flask, request, jsonify, Response, stream_with_context
+from flask_cors import CORS
+from model import get_ai_response
 from database import setup_database
 from flask import Flask, Response, jsonify, request, stream_with_context
 from flask_cors import CORS
@@ -110,7 +113,7 @@ def chat():
     return Response(
         stream_with_context(generate()),
         mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
     )
 
 
