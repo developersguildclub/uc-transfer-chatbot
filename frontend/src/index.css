@@ -26,3 +26,19 @@ button {
 input {
 	@apply text-base;
 }
+
+.streaming-bubble {
+	animation: streaming-bubble-in 180ms ease-out;
+}
+
+@keyframes streaming-bubble-in {
+	from {
+		opacity: 0.45;
+		transform: translateY(2px);
+	}
+
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
