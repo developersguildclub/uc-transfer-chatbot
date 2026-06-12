@@ -4,6 +4,7 @@ import pathlib
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 
 BACKEND_DIR = pathlib.Path(__file__).resolve().parent
 if str(BACKEND_DIR) not in sys.path:
@@ -26,6 +27,74 @@ def stream_events(response):
 
 
 class AuthRoutesTest(unittest.TestCase):
+    def test_course_matching_uses_code_boundaries(self):
+        model = importlib.import_module("model")
+
+        self.assertEqual(
+            model.first_mentioned(["ACCT 1A", "ACCT 1AH"], "does acct 1ah articulate?"),
+            "ACCT 1AH",
+        )
+        self.assertEqual(
+            model.first_mentioned(["ADMJ 1", "ADMJ 11"], "does admj 11 articulate?"),
+            "ADMJ 11",
+        )
+        self.assertIsNone(model.first_mentioned(["ADMJ 1"], "does admj 11 articulate?"))
+
+    def test_chat_history_question_does_not_reuse_stale_course_rows(self):
+        model = importlib.import_module("model")
+        calls = {}
+        get_chat_model = model.get_chat_model
+        get_valid_schools = model.get_valid_schools
+        get_valid_major = model.get_valid_major
+        get_valid_receiving_courses = model.get_valid_receiving_courses
+        get_valid_cc_courses = model.get_valid_cc_courses
+        search_articulations = model.search_articulations
+
+        class ChatModel:
+            def invoke(self, messages):
+                calls["messages"] = messages
+                return SimpleNamespace(content="ok")
+
+        model.get_chat_model = lambda: ChatModel()
+        model.get_valid_schools = lambda: ["University of California, Davis"]
+        model.get_valid_major = lambda: ["Computer Science"]
+        model.get_valid_receiving_courses = lambda: []
+        model.get_valid_cc_courses = lambda: ["CIS 22C"]
+        model.search_articulations = lambda **kwargs: self.fail(
+            "chat history questions should not retrieve old course rows"
+        )
+
+        try:
+            answer = model.get_ai_response(
+                [
+                    {"role": "user", "content": "list the uc colleges"},
+                    {
+                        "role": "assistant",
+                        "content": "The UC colleges listed in the local data summary are...",
+                    },
+                    {"role": "user", "content": "Does CIS 22C articulate?"},
+                    {
+                        "role": "assistant",
+                        "content": "Yes, local data has matches for CIS 22C.",
+                    },
+                    {
+                        "role": "user",
+                        "content": "what exact questions have I asked you up until this message?",
+                    },
+                ]
+            )
+        finally:
+            model.get_chat_model = get_chat_model
+            model.get_valid_schools = get_valid_schools
+            model.get_valid_major = get_valid_major
+            model.get_valid_receiving_courses = get_valid_receiving_courses
+            model.get_valid_cc_courses = get_valid_cc_courses
+            model.search_articulations = search_articulations
+
+        self.assertEqual(answer, "ok")
+        self.assertIn("local_data_summary", calls["messages"][-1]["content"])
+        self.assertNotIn("retrieved_articulation_rows", calls["messages"][-1]["content"])
+
     def test_guest_chat_and_saved_chat_boundaries(self):
         with tempfile.TemporaryDirectory() as tmp:
             database = importlib.import_module("database")

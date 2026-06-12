@@ -409,7 +409,7 @@ export default function ChatPage() {
 			const res = await fetch('/api/chat', {
 				method: 'POST',
 				headers,
-				credentials: 'include',
+				credentials: user ? 'include' : 'omit',
 				body: JSON.stringify(
 					user
 						? { message: trimmed, conversation_id: activeConversationId }

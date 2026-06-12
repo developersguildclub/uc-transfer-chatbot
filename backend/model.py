@@ -18,12 +18,14 @@ chat_model = None
 SYSTEM_PROMPT = """
 You are a UC transfer advising assistant.
 
-Use only the retrieved articulation rows. Do not use outside knowledge.
-The claim boundary is mandatory. Do not contradict it.
-Do not answer "yes" or "no" unless the claim boundary says that is allowed.
-Do not say a course does not transfer just because no local row was found.
-Answer the student's question first, then cite the relevant row details briefly.
-Keep the answer concise.
+Be short, direct, and evidence-backed.
+Use the chat history for context.
+Use retrieved articulation data only when it is provided.
+Follow the claim boundary exactly.
+Do not infer non-transferability from missing local rows.
+When using rows, cite campus, major, and course.
+Format with compact paragraphs or bullets.
+Say what is uncertain and what detail would resolve it.
 """.strip()
 
 
@@ -75,6 +77,7 @@ def articulation_rows(rows):
 
 def first_mentioned(values, message, skip=None):
     matches = []
+    message = message.lower()
 
     for value in values:
         value = value.strip()
@@ -82,14 +85,21 @@ def first_mentioned(values, message, skip=None):
         if not value or (skip and value == skip):
             continue
 
-        index = message.find(value.lower())
-        if index != -1:
-            matches.append((index, value))
+        needle = value.lower()
+        index = message.find(needle)
+        while index != -1:
+            end = index + len(needle)
+            before = index == 0 or not message[index - 1].isalnum()
+            after = end == len(message) or not message[end].isalnum()
+            if before and after:
+                matches.append((index, -len(needle), value))
+                break
+            index = message.find(needle, index + 1)
 
     if not matches:
         return None
 
-    return min(matches)[1]
+    return min(matches)[2]
 
 
 def claim_boundary(to_school, major, rows):
@@ -100,6 +110,78 @@ def claim_boundary(to_school, major, rows):
         return "Rows were retrieved. You may say local data has matches and summarize what campuses or requirements appear. Do not imply this proves transferability for every UC campus or major. Mention that exact articulation depends on campus and major."
 
     return "Rows were retrieved for the requested UC campus and major. You may answer from those rows only."
+
+
+def articulation_filters_in(message, filter_values):
+    filters = {
+        "to_school": first_mentioned(filter_values["to_school"], message),
+        "major": first_mentioned(filter_values["major"], message),
+        "cc_course": first_mentioned(filter_values["cc_course"], message),
+    }
+    filters["receiving"] = first_mentioned(
+        filter_values["receiving"], message, skip=filters["cc_course"]
+    )
+    return filters
+
+
+def looks_like_followup(message):
+    text = message.lower().strip()
+    words = [word.strip("?.!,") for word in text.split()]
+    followup_words = {"also", "another", "compare", "it", "that", "those", "them", "they"}
+    followup_phrases = ("what about", "how about", "same for", "and for", "does this", "is this")
+
+    return len(words) <= 12 and (
+        bool(set(words) & followup_words) or text.startswith(followup_phrases)
+    )
+
+
+def turn_articulation_filters(messages, filter_values):
+    latest = messages[-1]["content"]
+    filters = articulation_filters_in(latest, filter_values)
+    if any(filters.values()) or not looks_like_followup(latest):
+        return filters
+
+    for message in reversed(messages[:-1]):
+        if message["role"] != "user":
+            continue
+
+        previous = articulation_filters_in(message["content"], filter_values)
+        for key, value in previous.items():
+            if filters[key] is None:
+                filters[key] = value
+
+        if any(filters.values()):
+            break
+
+    return filters
+
+
+def question_context_message(latest_message, filters, filter_values):
+    if not any(filters.values()):
+        context = {
+            "claim_boundary": "No articulation rows were retrieved. Answer from chat history and the local data summary only. Ask for campus, major, UC course, or community college course when needed.",
+            "local_data_summary": {
+                "campuses": sorted(filter_values["to_school"]),
+                "sample_majors": sorted(filter_values["major"])[:20],
+            },
+        }
+    else:
+        rows = search_articulations(**filters, limit=500)
+        context = {
+            "claim_boundary": claim_boundary(filters["to_school"], filters["major"], rows),
+            "matched_filters": filters,
+            "retrieved_row_summary": {
+                "row_count": len(rows),
+                "campuses": sorted({row[0] for row in rows if row[0]}),
+                "majors": sorted({row[1] for row in rows if row[1]})[:20],
+            },
+            "retrieved_articulation_rows": articulation_rows(rows[:25]),
+        }
+
+    return {
+        "role": "user",
+        "content": f"Student question: {latest_message}\n\nContext:\n{json.dumps(context, indent=2)}",
+    }
 
 
 def get_chat_model():
@@ -121,90 +203,18 @@ def get_ai_response(messages):
     if isinstance(messages, str):
         messages = [{"role": "user", "content": messages}]
 
-    filters = {
-        "to_school": None,
-        "major": None,
-        "receiving": None,
-        "cc_course": None,
-    }
     filter_values = {
         "to_school": get_valid_schools(),
         "major": get_valid_major(),
         "receiving": get_valid_receiving_courses(),
         "cc_course": get_valid_cc_courses(),
     }
-
-    for message in reversed(messages):
-        if message["role"] != "user":
-            continue
-
-        content = message["content"].lower()
-
-        if filters["to_school"] is None:
-            filters["to_school"] = first_mentioned(filter_values["to_school"], content)
-        if filters["major"] is None:
-            filters["major"] = first_mentioned(filter_values["major"], content)
-        if filters["cc_course"] is None:
-            filters["cc_course"] = first_mentioned(filter_values["cc_course"], content)
-        if filters["receiving"] is None:
-            filters["receiving"] = first_mentioned(
-                filter_values["receiving"], content, skip=filters["cc_course"]
-            )
-
-        if all(filters.values()):
-            break
-
     latest_message = messages[-1]["content"]
-
-    if not any(filters.values()):
-        campuses = sorted(get_valid_schools())
-        majors = sorted(get_valid_major())[:20]
-        model_messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            *messages[:-1],
-            {
-                "role": "user",
-                "content": "\n\n".join(
-                    [
-                        f"Student question: {latest_message}",
-                        "Claim boundary:",
-                        "No specific articulation rows were retrieved because no UC campus, major, UC course, or community college course was detected. You may answer only from the local data summary below. If the student asks a broad question, summarize what local data is available and ask for a more specific campus, major, or course when needed.",
-                        "Local data summary:",
-                        json.dumps({"campuses": campuses, "sample_majors": majors}, indent=2),
-                    ]
-                ),
-            },
-        ]
-
-        response = get_chat_model().invoke(model_messages)
-
-        return response_text(response)
-
-    rows = search_articulations(**filters, limit=500)
-    summary = {
-        "row_count": len(rows),
-        "campuses": sorted({row[0] for row in rows if row[0]}),
-        "majors": sorted({row[1] for row in rows if row[1]})[:20],
-    }
+    filters = turn_articulation_filters(messages, filter_values)
     model_messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         *messages[:-1],
-        {
-            "role": "user",
-            "content": "\n\n".join(
-                [
-                    f"Student question: {latest_message}",
-                    "Claim boundary:",
-                    claim_boundary(filters["to_school"], filters["major"], rows),
-                    "Matched filters:",
-                    json.dumps(filters, indent=2),
-                    "Retrieved row summary:",
-                    json.dumps(summary, indent=2),
-                    "Retrieved articulation rows:",
-                    json.dumps(articulation_rows(rows[:25]), indent=2),
-                ]
-            ),
-        },
+        question_context_message(latest_message, filters, filter_values),
     ]
 
     response = get_chat_model().invoke(model_messages)
