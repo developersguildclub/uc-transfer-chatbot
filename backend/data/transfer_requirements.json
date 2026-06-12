@@ -1,0 +1,189 @@
+{
+  "source": "UC Admissions PDFs in Downloads/UC Transfer Chatbot/IGetc-CalGetc",
+  "programs": [
+    {
+      "id": "igetc",
+      "name": "IGETC",
+      "full_name": "Intersegmental General Education Transfer Curriculum",
+      "source_file": "IGETC _ UC Admissions.pdf",
+      "summary": "California community college students can complete IGETC to satisfy most freshman/sophomore-level general education requirements before transferring to UC.",
+      "availability": "Available to students who enrolled at a California community college before fall 2025. As of fall 2025, Cal-GETC is the only pattern available for newly enrolling students. UC will continue to accept IGETC certifications for the foreseeable future.",
+      "total": {
+        "courses": "11 courses",
+        "units": "34 semester units"
+      },
+      "requirements": [
+        {
+          "area": "1",
+          "name": "English Communication",
+          "required_courses": "One course in English composition and one course in critical thinking/English composition.",
+          "course_count": "2 courses",
+          "units": "6 semester units or 8-10 quarter units",
+          "source_page": 1
+        },
+        {
+          "area": "2",
+          "name": "Mathematical Concepts and Quantitative Reasoning",
+          "required_courses": "One course.",
+          "course_count": "1 course",
+          "units": "3 semester units or 4-5 quarter units",
+          "source_page": 1
+        },
+        {
+          "area": "3",
+          "name": "Arts and Humanities",
+          "required_courses": "Three courses with at least one from the arts and one from the humanities.",
+          "course_count": "3 courses",
+          "units": "9 semester units or 12-15 quarter units",
+          "source_page": 1
+        },
+        {
+          "area": "4",
+          "name": "Social and Behavioral Sciences",
+          "required_courses": "Two courses from at least two disciplines or in an interdisciplinary sequence.",
+          "course_count": "2 courses",
+          "units": "6 semester units or 8-10 quarter units",
+          "source_page": 1
+        },
+        {
+          "area": "5",
+          "name": "Physical and Biological Sciences",
+          "required_courses": "One physical science course and one biological science course, with at least one laboratory.",
+          "course_count": "2 courses",
+          "units": "7-9 semester units or 9-12 quarter units",
+          "source_page": 1
+        },
+        {
+          "area": "6",
+          "name": "Language Other than English",
+          "required_courses": "Proficiency equivalent to two years of high school courses in the same language.",
+          "course_count": "Proficiency",
+          "units": "Proficiency",
+          "source_page": 1
+        },
+        {
+          "area": "7",
+          "name": "Ethnic Studies",
+          "required_courses": "One course.",
+          "course_count": "1 course",
+          "units": "3 semester units or 4-5 quarter units",
+          "source_page": 1
+        }
+      ],
+      "notes": [
+        {
+          "text": "IGETC for STEM is only available to students earning an associate degree for transfer at a California community college in a major that offers IGETC for STEM as an option.",
+          "source_page": 1
+        },
+        {
+          "text": "Courses count toward IGETC with grades of C or better. Credit or Pass can count if the community college treats it as equivalent to C or better.",
+          "source_page": 1
+        },
+        {
+          "text": "Specific AP exam scores of 3, 4, or 5 may fulfill some IGETC requirements.",
+          "source_page": 1
+        },
+        {
+          "text": "An English AP score of 3, 4, or 5 may meet English Composition Area 1A, but not Critical Thinking/English Composition Area 1B.",
+          "source_page": 2
+        },
+        {
+          "text": "IGETC courses can be taken at more than one California community college, but coursework only applies in the area where it was approved at the college where it was completed.",
+          "source_page": 2
+        },
+        {
+          "text": "Some community colleges may grant partial IGETC certification when no more than two requirements are missing.",
+          "source_page": 2
+        },
+        {
+          "text": "Certification is the responsibility of the last California community college attended. Students should verify that their UC school, college, or major accepts partial certification.",
+          "source_page": 2
+        }
+      ]
+    },
+    {
+      "id": "cal_getc",
+      "name": "Cal-GETC",
+      "full_name": "California General Education Transfer Curriculum",
+      "source_file": "Cal-GETC _ UC Admissions.pdf",
+      "summary": "California community college students can complete Cal-GETC to satisfy most freshman/sophomore-level general education requirements before transferring to UC.",
+      "availability": "Cal-GETC is the new general education pattern at all California community colleges. If a student enrolled at a California community college in fall 2025, this is the available pattern.",
+      "total": {
+        "courses": "11 courses",
+        "units": "34 semester units"
+      },
+      "requirements": [
+        {
+          "area": "1",
+          "name": "English Communication",
+          "required_courses": "One course in English composition, one course in critical thinking and composition, and one course in oral communication.",
+          "course_count": "3 courses",
+          "units": "9 semester units or 12 quarter units",
+          "source_page": 1
+        },
+        {
+          "area": "2",
+          "name": "Mathematical Concepts and Quantitative Reasoning",
+          "required_courses": "One course.",
+          "course_count": "1 course",
+          "units": "3 semester units or 4 quarter units",
+          "source_page": 1
+        },
+        {
+          "area": "3",
+          "name": "Arts and Humanities",
+          "required_courses": "Two courses with at least one from the arts and one from the humanities.",
+          "course_count": "2 courses",
+          "units": "6 semester units or 8 quarter units",
+          "source_page": 1
+        },
+        {
+          "area": "4",
+          "name": "Social and Behavioral Sciences",
+          "required_courses": "Two courses from at least two disciplines.",
+          "course_count": "2 courses",
+          "units": "6 semester units or 8 quarter units",
+          "source_page": 1
+        },
+        {
+          "area": "5",
+          "name": "Physical and Biological Sciences",
+          "required_courses": "At least two courses: one physical science course and one biological science course, with at least one laboratory.",
+          "course_count": "2 courses",
+          "units": "7 semester units or 9 quarter units",
+          "source_page": 1
+        },
+        {
+          "area": "6",
+          "name": "Ethnic Studies",
+          "required_courses": "One course.",
+          "course_count": "1 course",
+          "units": "3 semester units or 4-5 quarter units",
+          "source_page": 1
+        }
+      ],
+      "notes": [
+        {
+          "text": "Courses count toward Cal-GETC with grades of C or better. Credit or Pass can count if the community college treats it as equivalent to C or better.",
+          "source_page": 1
+        },
+        {
+          "text": "Specific AP exam scores of 3, 4, or 5 may fulfill some Cal-GETC requirements.",
+          "source_page": 1
+        },
+        {
+          "text": "An English AP score of 3, 4, or 5 may meet English Composition Area 1A, but not Critical Thinking and Composition Area 1B.",
+          "source_page": 1
+        },
+        {
+          "text": "Cal-GETC courses can be taken at more than one California community college, but coursework only applies in the area where it was approved at the college where it was completed.",
+          "source_page": 2
+        },
+        {
+          "text": "Cal-GETC is not a UC admission requirement, but some campuses may prefer completion for selection. If Cal-GETC is incomplete, completed courses receive credit as appropriate for the UC's general education breadth requirements.",
+          "source_page": 2
+        }
+      ]
+    }
+  ]
+}

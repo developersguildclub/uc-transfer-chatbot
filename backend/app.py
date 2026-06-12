@@ -4,11 +4,13 @@ import json
 import os
 import secrets
 import time
+from smtplib import SMTPException
 from sqlite3 import IntegrityError
 
 from database import get_app_connection, setup_app_database, setup_database
 from flask import Flask, Response, jsonify, request, stream_with_context
 from flask_cors import CORS
+from mail import mail_ready, send_mail
 from model import get_ai_response
 from query_courses import search_articulations
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -22,7 +24,12 @@ SESSION_COOKIE_NAME = "uc_transfer_session"
 CSRF_COOKIE_NAME = "uc_transfer_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 14
+ACCOUNT_TOKEN_TTL_SECONDS = 60 * 60
 COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "").lower() == "true"
+APP_BASE_URL = os.getenv(
+    "APP_BASE_URL",
+    FRONTEND_ORIGINS[0] if FRONTEND_ORIGINS else "http://localhost:5173",
+).rstrip("/")
 
 app = Flask(__name__)
 CORS(
@@ -149,7 +156,44 @@ def token_hash(token):
 
 
 def user_from_row(row):
-    return {"id": row[0], "email": row[1]}
+    return {"id": row[0], "email": row[1], "email_verified": bool(row[2])}
+
+
+def create_account_token(cursor, user_id, purpose):
+    now = int(time.time())
+    token = secrets.token_urlsafe(32)
+    cursor.execute(
+        """
+        UPDATE account_tokens
+        SET used_at = ?
+        WHERE user_id = ? AND purpose = ? AND used_at IS NULL
+    """,
+        (now, user_id, purpose),
+    )
+    cursor.execute(
+        """
+        INSERT INTO account_tokens (user_id, purpose, token_hash, created_at, expires_at)
+        VALUES (?, ?, ?, ?, ?)
+    """,
+        (user_id, purpose, token_hash(token), now, now + ACCOUNT_TOKEN_TTL_SECONDS),
+    )
+    return token
+
+
+def account_token_user(cursor, token, purpose):
+    cursor.execute(
+        """
+        SELECT u.id, u.email, u.email_verified_at, t.id
+        FROM account_tokens t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.token_hash = ?
+          AND t.purpose = ?
+          AND t.used_at IS NULL
+          AND t.expires_at > ?
+    """,
+        (token_hash(token), purpose, int(time.time())),
+    )
+    return cursor.fetchone()
 
 
 def current_session():
@@ -161,7 +205,7 @@ def current_session():
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT u.id, u.email, s.token_hash, s.csrf_token_hash
+        SELECT u.id, u.email, u.email_verified_at, s.token_hash, s.csrf_token_hash
         FROM sessions s
         JOIN users u ON u.id = s.user_id
         WHERE s.token_hash = ? AND s.expires_at > ?
@@ -174,7 +218,7 @@ def current_session():
     if not row:
         return None
 
-    return {"user": user_from_row(row), "token_hash": row[2], "csrf_token_hash": row[3]}
+    return {"user": user_from_row(row), "token_hash": row[3], "csrf_token_hash": row[4]}
 
 
 def csrf_matches(session, csrf_token):
@@ -249,8 +293,6 @@ def response_with_session(user):
 
 @app.route("/auth/signup", methods=["POST"])
 def signup():
-    # TODO: Add email verification before accounts can own saved conversations.
-    # TODO: Add password reset tokens after mail delivery config exists.
     email, password, error = credentials_from_request()
     if error:
         return error
@@ -281,7 +323,7 @@ def signup():
         conn.close()
         return jsonify({"error": "An account already exists for that email"}), 409
 
-    user = {"id": cursor.lastrowid, "email": email}
+    user = {"id": cursor.lastrowid, "email": email, "email_verified": False}
     conn.close()
 
     return response_with_session(user), 201
@@ -300,7 +342,7 @@ def login():
     cursor = conn.cursor()
     cursor.execute(
         """
-        SELECT id, email, password_hash
+        SELECT id, email, email_verified_at, password_hash
         FROM users
         WHERE email = ?
     """,
@@ -309,10 +351,215 @@ def login():
     row = cursor.fetchone()
     conn.close()
 
-    if not row or not check_password_hash(row[2], password):
+    if not row or not check_password_hash(row[3], password):
         return jsonify({"error": "Invalid email or password"}), 401
 
     return response_with_session(user_from_row(row))
+
+
+@app.route("/auth/change-password", methods=["POST"])
+def change_password():
+    session, error = require_write_user()
+    if error:
+        return error
+
+    data, error = json_body()
+    if error:
+        return error
+
+    current_password = data.get("current_password")
+    new_password = data.get("new_password")
+    if not isinstance(current_password, str) or not isinstance(new_password, str):
+        return jsonify({"error": "Expected current_password and new_password"}), 400
+
+    if len(new_password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
+
+    conn = get_app_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT password_hash FROM users WHERE id = ?", (session["user"]["id"],))
+    row = cursor.fetchone()
+    if not row or not check_password_hash(row[0], current_password):
+        conn.close()
+        return jsonify({"error": "Current password is incorrect"}), 401
+
+    cursor.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (generate_password_hash(new_password), session["user"]["id"]),
+    )
+    cursor.execute(
+        "DELETE FROM sessions WHERE user_id = ? AND token_hash != ?",
+        (session["user"]["id"], session["token_hash"]),
+    )
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "Password changed."})
+
+
+@app.route("/auth/email-verification/request", methods=["POST"])
+def request_email_verification():
+    session, error = require_write_user()
+    if error:
+        return error
+
+    if not mail_ready():
+        return jsonify({"error": "Email is not configured"}), 500
+
+    conn = get_app_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, email, email_verified_at FROM users WHERE id = ?",
+        (session["user"]["id"],),
+    )
+    row = cursor.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Authentication required"}), 401
+
+    if row[2]:
+        conn.close()
+        return jsonify({"user": user_from_row(row), "message": "Email already verified."})
+
+    token = create_account_token(cursor, row[0], "email_verification")
+    conn.commit()
+    conn.close()
+
+    verify_url = f"{APP_BASE_URL}/account?verify_token={token}"
+    try:
+        send_mail(
+            row[1],
+            "Verify your UC Transfer Chatbot email",
+            f"Verify your email here:\n\n{verify_url}\n\nThis link expires in 1 hour.",
+        )
+    except RuntimeError as err:
+        return jsonify({"error": str(err)}), 500
+    except (OSError, SMTPException):
+        return jsonify({"error": "Email could not be sent"}), 502
+
+    return jsonify({"message": "Verification email sent."})
+
+
+@app.route("/auth/email-verification/confirm", methods=["POST"])
+def confirm_email_verification():
+    error = origin_error()
+    if error:
+        return error
+
+    data, error = json_body()
+    if error:
+        return error
+
+    token = data.get("token")
+    if not isinstance(token, str) or not token:
+        return jsonify({"error": "Expected token"}), 400
+
+    conn = get_app_connection()
+    cursor = conn.cursor()
+    row = account_token_user(cursor, token, "email_verification")
+    if not row:
+        conn.close()
+        return jsonify({"error": "Verification link is invalid or expired"}), 400
+
+    now = int(time.time())
+    cursor.execute(
+        "UPDATE users SET email_verified_at = COALESCE(email_verified_at, ?) WHERE id = ?",
+        (now, row[0]),
+    )
+    cursor.execute("UPDATE account_tokens SET used_at = ? WHERE id = ?", (now, row[3]))
+    cursor.execute("SELECT id, email, email_verified_at FROM users WHERE id = ?", (row[0],))
+    user = user_from_row(cursor.fetchone())
+    conn.commit()
+    conn.close()
+
+    return jsonify({"user": user, "message": "Email verified."})
+
+
+@app.route("/auth/password-reset/request", methods=["POST"])
+def request_password_reset():
+    error = origin_error()
+    if error:
+        return error
+
+    data, error = json_body()
+    if error:
+        return error
+
+    email = data.get("email")
+    if not isinstance(email, str) or not email.strip():
+        return jsonify({"error": "Expected email"}), 400
+
+    if not mail_ready():
+        return jsonify({"error": "Email is not configured"}), 500
+
+    conn = get_app_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, email, email_verified_at FROM users WHERE email = ?",
+        (email.strip().lower(),),
+    )
+    row = cursor.fetchone()
+    reset_email = None
+    reset_url = None
+
+    if row:
+        token = create_account_token(cursor, row[0], "password_reset")
+        reset_email = row[1]
+        reset_url = f"{APP_BASE_URL}/account?reset_token={token}"
+
+    conn.commit()
+    conn.close()
+
+    if reset_email and reset_url:
+        try:
+            send_mail(
+                reset_email,
+                "Reset your UC Transfer Chatbot password",
+                f"Reset your password here:\n\n{reset_url}\n\nThis link expires in 1 hour.",
+            )
+        except (RuntimeError, OSError, SMTPException):
+            # Keep reset responses generic so mail outages do not reveal account existence.
+            pass
+
+    return jsonify({"message": "If that account exists, a reset email has been sent."})
+
+
+@app.route("/auth/password-reset/confirm", methods=["POST"])
+def confirm_password_reset():
+    error = origin_error()
+    if error:
+        return error
+
+    data, error = json_body()
+    if error:
+        return error
+
+    token = data.get("token")
+    new_password = data.get("new_password")
+    if not isinstance(token, str) or not token:
+        return jsonify({"error": "Expected token"}), 400
+
+    if not isinstance(new_password, str) or len(new_password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
+
+    conn = get_app_connection()
+    cursor = conn.cursor()
+    row = account_token_user(cursor, token, "password_reset")
+    if not row:
+        conn.close()
+        return jsonify({"error": "Reset link is invalid or expired"}), 400
+
+    now = int(time.time())
+    cursor.execute(
+        "UPDATE users SET password_hash = ? WHERE id = ?",
+        (generate_password_hash(new_password), row[0]),
+    )
+    cursor.execute("UPDATE account_tokens SET used_at = ? WHERE id = ?", (now, row[3]))
+    cursor.execute("DELETE FROM sessions WHERE user_id = ?", (row[0],))
+    conn.commit()
+    conn.close()
+
+    return jsonify({"message": "Password reset."})
 
 
 @app.route("/auth/logout", methods=["POST"])
@@ -430,6 +677,31 @@ def get_conversation(conversation_id):
     conn.close()
 
     return jsonify({"conversation": conversation, "messages": messages})
+
+
+@app.route("/conversations/<int:conversation_id>", methods=["DELETE"])
+def delete_conversation(conversation_id):
+    session, error = require_write_user()
+    if error:
+        return error
+
+    conn = get_app_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        DELETE FROM conversations
+        WHERE id = ? AND user_id = ?
+    """,
+        (conversation_id, session["user"]["id"]),
+    )
+    deleted = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    if not deleted:
+        return jsonify({"error": "Conversation not found"}), 404
+
+    return jsonify({"conversation_id": conversation_id})
 
 
 def stored_messages(cursor, conversation_id):

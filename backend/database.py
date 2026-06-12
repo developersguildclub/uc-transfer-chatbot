@@ -28,9 +28,15 @@ def setup_app_database():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
+            email_verified_at INTEGER,
             created_at INTEGER NOT NULL
         )
     """)
+
+    cursor.execute("PRAGMA table_info(users)")
+    user_columns = {row[1] for row in cursor.fetchall()}
+    if "email_verified_at" not in user_columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN email_verified_at INTEGER")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sessions (
@@ -41,6 +47,19 @@ def setup_app_database():
             created_at INTEGER NOT NULL,
             expires_at INTEGER NOT NULL,
             FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS account_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            purpose TEXT NOT NULL CHECK (purpose IN ('email_verification', 'password_reset')),
+            token_hash TEXT NOT NULL UNIQUE,
+            created_at INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            used_at INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         )
     """)
 
@@ -82,6 +101,11 @@ def setup_app_database():
     cursor.execute("""
         CREATE INDEX IF NOT EXISTS messages_conversation_position_idx
         ON conversation_messages (conversation_id, position)
+    """)
+
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS account_tokens_user_purpose_idx
+        ON account_tokens (user_id, purpose, expires_at)
     """)
 
     conn.commit()

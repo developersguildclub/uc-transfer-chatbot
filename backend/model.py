@@ -1,5 +1,7 @@
 import json
 import os
+from functools import lru_cache
+from pathlib import Path
 
 from dotenv import load_dotenv
 from langchain.chat_models import init_chat_model
@@ -14,6 +16,10 @@ from query_courses import (
 load_dotenv()
 
 chat_model = None
+BASE_DIR = Path(__file__).resolve().parent
+TRANSFER_REQUIREMENTS_PATH = BASE_DIR / "data" / "transfer_requirements.json"
+RECENT_MESSAGE_COUNT = 8
+PRIOR_QUESTION_COUNT = 16
 
 SYSTEM_PROMPT = """
 You are a UC transfer advising assistant.
@@ -21,9 +27,10 @@ You are a UC transfer advising assistant.
 Be short, direct, and evidence-backed.
 Use the chat history for context.
 Use retrieved articulation data only when it is provided.
+Use retrieved general education data only when it is provided.
 Follow the claim boundary exactly.
 Do not infer non-transferability from missing local rows.
-When using rows, cite campus, major, and course.
+When using retrieved data, cite campus, major, course, source, or page when available.
 Format with compact paragraphs or bullets.
 Say what is uncertain and what detail would resolve it.
 """.strip()
@@ -112,6 +119,56 @@ def claim_boundary(to_school, major, rows):
     return "Rows were retrieved for the requested UC campus and major. You may answer from those rows only."
 
 
+@lru_cache
+def transfer_requirements():
+    with TRANSFER_REQUIREMENTS_PATH.open() as file:
+        return json.load(file)["programs"]
+
+
+def transfer_program_ids(message):
+    text = message.lower()
+    compact = text.replace("-", "").replace(" ", "")
+    program_ids = []
+
+    if "igetc" in compact:
+        program_ids.append("igetc")
+    if "calgetc" in compact:
+        program_ids.append("cal_getc")
+
+    if program_ids:
+        return program_ids
+
+    ge_terms = (
+        "general education",
+        "ge pattern",
+        "ge requirements",
+        "breadth",
+        "ethnic studies",
+        "oral communication",
+        "critical thinking",
+        "ap exam",
+        "ap score",
+        "partial certification",
+    )
+    if any(term in text for term in ge_terms):
+        return ["igetc", "cal_getc"]
+
+    return []
+
+
+def transfer_program_context(message):
+    program_ids = set(transfer_program_ids(message))
+    if not program_ids:
+        return None
+
+    programs = []
+    for program in transfer_requirements():
+        if program["id"] in program_ids:
+            programs.append(program)
+
+    return programs
+
+
 def articulation_filters_in(message, filter_values):
     filters = {
         "to_school": first_mentioned(filter_values["to_school"], message),
@@ -156,15 +213,49 @@ def turn_articulation_filters(messages, filter_values):
     return filters
 
 
-def question_context_message(latest_message, filters, filter_values):
+def wants_local_summary(message):
+    text = message.lower()
+    return (
+        ("uc" in text and any(word in text for word in ("campus", "campuses", "college", "school")))
+        or "what majors" in text
+        or "list the uc" in text
+    )
+
+
+def model_history(messages):
+    history = messages[:-1]
+    if len(history) <= RECENT_MESSAGE_COUNT:
+        return history
+
+    questions = [
+        message["content"].strip()
+        for message in history
+        if message["role"] == "user" and message["content"].strip()
+    ]
+    memory = {
+        "omitted_message_count": len(history) - RECENT_MESSAGE_COUNT,
+        "recent_user_questions": questions[-PRIOR_QUESTION_COUNT:],
+    }
+
+    return [
+        {
+            "role": "system",
+            "content": f"Earlier conversation index:\n{json.dumps(memory, indent=2)}",
+        },
+        *history[-RECENT_MESSAGE_COUNT:],
+    ]
+
+
+def question_context_message(latest_message, filters, filter_values, program_context):
     if not any(filters.values()):
         context = {
-            "claim_boundary": "No articulation rows were retrieved. Answer from chat history and the local data summary only. Ask for campus, major, UC course, or community college course when needed.",
-            "local_data_summary": {
+            "claim_boundary": "No articulation rows were retrieved. Answer from chat history and retrieved general education data if present. Ask for campus, major, UC course, community college course, IGETC, or Cal-GETC when needed.",
+        }
+        if wants_local_summary(latest_message):
+            context["local_data_summary"] = {
                 "campuses": sorted(filter_values["to_school"]),
                 "sample_majors": sorted(filter_values["major"])[:20],
-            },
-        }
+            }
     else:
         rows = search_articulations(**filters, limit=500)
         context = {
@@ -177,6 +268,9 @@ def question_context_message(latest_message, filters, filter_values):
             },
             "retrieved_articulation_rows": articulation_rows(rows[:25]),
         }
+
+    if program_context:
+        context["retrieved_general_education"] = program_context
 
     return {
         "role": "user",
@@ -211,10 +305,11 @@ def get_ai_response(messages):
     }
     latest_message = messages[-1]["content"]
     filters = turn_articulation_filters(messages, filter_values)
+    program_context = transfer_program_context(latest_message)
     model_messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        *messages[:-1],
-        question_context_message(latest_message, filters, filter_values),
+        *model_history(messages),
+        question_context_message(latest_message, filters, filter_values, program_context),
     ]
 
     response = get_chat_model().invoke(model_messages)

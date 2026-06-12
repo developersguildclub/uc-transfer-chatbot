@@ -1,104 +1,79 @@
-# UC Transfer Chatbot
+UC Transfer Chatbot
 
-This project has:
+This is a React + Flask chatbot for UC transfer planning.
 
-- `backend/` (Flask API)
-- `frontend/` (React + Vite app)
+The frontend lives in `frontend/`.
 
+The backend lives in `backend/`.
 
-**quick note on storage policy**
-- Transfer and articulation data belongs in `backend/transfer.db`.
-- Private app data, including accounts, saved conversations, and chat messages, belongs in `backend/instance/app.db`.
-- `backend/instance/` is included in gitignore and should not be used for public seed data.
+Transfer and articulation data lives in `backend/transfer.db` and JSON files under `backend/data/`.
 
-## Prerequisites
+Private app data lives in `backend/instance/app.db`. That includes accounts, sessions, saved chats, and saved messages. Keep `backend/instance/` out of git.
 
-- Python 3.10+ (recommended)
-- Node.js 18+ (or newer LTS)
-- `pnpm` installed globally
+The app currently supports this set of flows.
 
-If you do not have `pnpm` yet:
+- course articulation lookup from local ASSIST-derived data
+- IGETC and Cal-GETC context from JSON data
+- short, evidence-backed chatbot responses
+- guest chats in browser state
+- saved chats for logged-in users
+- signup, login, logout
+- password change
+- password reset by email
+- email verification by email
+- account management from the app header
+
+Use two terminals for local development.
+
+Run this in Terminal 1.
 
 ```bash
-npm install -g pnpm
+cd /Users/nadathurv/Downloads/GitHub/uc-transfer-chatbot/backend && source "$HOME/Documents/uv_global_venv/bin/activate" && python app.py
 ```
 
-## 1) Install Backend Requirements
-
-From the project root:
+Run this in Terminal 2.
 
 ```bash
-cd backend
-pip install -r requirements.txt
+cd /Users/nadathurv/Downloads/GitHub/uc-transfer-chatbot/frontend && npx pnpm@latest install && npx pnpm@latest dev
 ```
 
-## 2) Configure the `.env` File
+Open `http://localhost:5173`.
 
-The backend needs an AI API key to work. From `backend/`, copy the example file to create your own `.env`:
+The frontend proxies `/api` to `http://localhost:5000`.
 
-```bash
-cd backend
-cp .env.example .env
-```
+Create `backend/.env` from `backend/.env.example`.
 
-Then open `.env` and add your API key.
-
-We'll use [LLM7.io](https://llm7.io/) for the AI API key (it has a great free tier). To get a key:
-
-1. Go to [https://llm7.io/](https://llm7.io/) and create an account.
-2. On the dashboard, scroll down to **Manage API keys** and click **Add API key**.
-3. Copy the generated key and paste it into your `.env` file as the value of `AI_API_KEY`.
-
-Make sure `USE_LLM7=true` is set when using an LLM7.io key:
+Set these in `backend/.env` for local work.
 
 ```bash
-AI_API_KEY="your-key-here"
+AI_API_KEY="your-key"
 USE_LLM7=true
+APP_BASE_URL="http://localhost:5173"
+FRONTEND_ORIGINS="http://localhost:5173"
+SESSION_COOKIE_SECURE=false
 ```
 
-> Alternatively, you can use a default OpenAI API key. In that case, set `USE_LLM7=false` and use your OpenAI key as `AI_API_KEY`.
-
-## 3) Install Frontend Requirements
-
-In a second terminal (or after finishing backend setup):
+Email features need SMTP config.
 
 ```bash
-cd frontend
-pnpm i
+MAIL_HOST="smtp.example.com"
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME="smtp-user"
+MAIL_PASSWORD="smtp-password"
+MAIL_FROM="UC Transfer Chatbot <no-reply@example.com>"
 ```
 
-## 4) Run the Backend
+For production, set `APP_BASE_URL` to the frontend URL. Set `FRONTEND_ORIGINS` to the exact frontend origin. Set `SESSION_COOKIE_SECURE=true` when serving over HTTPS.
 
-From `backend/`:
+These are the usual checks before opening a PR.
 
 ```bash
-python app.py
+cd /Users/nadathurv/Downloads/GitHub/uc-transfer-chatbot/frontend && npx pnpm@latest lint && npx pnpm@latest build
 ```
-
-Backend runs at: `http://localhost:5000`
-
-## 5) Run the Frontend
-
-From `frontend/`:
 
 ```bash
-pnpm dev --open
+cd /Users/nadathurv/Downloads/GitHub/uc-transfer-chatbot/backend && source "$HOME/Documents/uv_global_venv/bin/activate" && python -m unittest backend.test_auth_routes
 ```
 
-Frontend runs at: `http://localhost:5173`
-
-## Quick Start (Two Terminals)
-
-Terminal 1 (backend):
-
-```bash
-cd backend
-python app.py
-```
-
-Terminal 2 (frontend):
-
-```bash
-cd frontend
-pnpm dev --open
-```
+If port `5000` is busy on macOS, inspect it before killing anything. AirPlay Receiver / Control Center can bind that port.

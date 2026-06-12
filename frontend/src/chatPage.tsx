@@ -9,6 +9,7 @@ interface Message {
 interface User {
 	id: number;
 	email: string;
+	email_verified: boolean;
 }
 
 interface Conversation {
@@ -33,7 +34,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isUser(value: unknown): value is User {
-	return isRecord(value) && typeof value.id === 'number' && typeof value.email === 'string';
+	return (
+		isRecord(value) &&
+		typeof value.id === 'number' &&
+		typeof value.email === 'string' &&
+		typeof value.email_verified === 'boolean'
+	);
 }
 
 function isConversation(value: unknown): value is Conversation {
@@ -55,6 +61,25 @@ function isApiMessage(value: unknown): value is ApiMessage {
 
 function errorMessage(data: unknown, fallback: string) {
 	return isRecord(data) && typeof data.error === 'string' ? data.error : fallback;
+}
+
+function responseMessage(data: unknown, fallback: string) {
+	return isRecord(data) && typeof data.message === 'string' ? data.message : fallback;
+}
+
+function clearAccountTokensFromUrl() {
+	const url = new URL(window.location.href);
+	url.searchParams.delete('verify_token');
+	url.searchParams.delete('reset_token');
+	window.history.replaceState(null, '', `${url.pathname}${url.search}${url.hash}`);
+}
+
+function accountTokensFromUrl() {
+	const params = new URLSearchParams(window.location.search);
+	return {
+		verifyToken: params.get('verify_token') ?? '',
+		resetToken: params.get('reset_token') ?? ''
+	};
 }
 
 function readStreamEvent(rawEvent: string) {
@@ -97,6 +122,7 @@ function messageToApi(message: Message): ApiMessage {
 }
 
 export default function ChatPage() {
+	const [urlTokens] = useState(accountTokensFromUrl);
 	const [messages, setMessages] = useState<Message[]>(INITIAL_MESSAGES);
 	const [input, setInput] = useState('');
 	const [isSending, setIsSending] = useState(false);
@@ -104,8 +130,20 @@ export default function ChatPage() {
 	const [csrfToken, setCsrfToken] = useState('');
 	const [conversations, setConversations] = useState<Conversation[]>([]);
 	const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+	const [deletingConversationId, setDeletingConversationId] = useState<number | null>(null);
 	const [historyError, setHistoryError] = useState('');
 	const [accountError, setAccountError] = useState('');
+	const [accountMessage, setAccountMessage] = useState('');
+	const [isAccountOpen, setIsAccountOpen] = useState(
+		Boolean(urlTokens.verifyToken || urlTokens.resetToken)
+	);
+	const [isAccountSending, setIsAccountSending] = useState(false);
+	const [currentPassword, setCurrentPassword] = useState('');
+	const [newPassword, setNewPassword] = useState('');
+	const [resetEmail, setResetEmail] = useState('');
+	const [resetPassword, setResetPassword] = useState('');
+	const [verifyToken, setVerifyToken] = useState(urlTokens.verifyToken);
+	const [resetToken, setResetToken] = useState(urlTokens.resetToken);
 	const [authMode, setAuthMode] = useState<AuthMode | null>(null);
 	const [authEmail, setAuthEmail] = useState('');
 	const [authPassword, setAuthPassword] = useState('');
@@ -115,11 +153,26 @@ export default function ChatPage() {
 	const authDialogRef = useRef<HTMLFormElement>(null);
 	const authEmailRef = useRef<HTMLInputElement>(null);
 	const authReturnFocusRef = useRef<HTMLElement | null>(null);
+	const accountReturnFocusRef = useRef<HTMLElement | null>(null);
 
 	const closeAuth = useCallback(() => {
 		setAuthMode(null);
 		authReturnFocusRef.current?.focus();
 	}, []);
+
+	const closeAccount = useCallback(() => {
+		setIsAccountOpen(false);
+		accountReturnFocusRef.current?.focus();
+	}, []);
+
+	function openAccount(initialResetEmail = user?.email ?? '') {
+		accountReturnFocusRef.current =
+			document.activeElement instanceof HTMLElement ? document.activeElement : null;
+		setIsAccountOpen(true);
+		setAccountError('');
+		setAccountMessage('');
+		setResetEmail(initialResetEmail);
+	}
 
 	useEffect(() => {
 		let active = true;
@@ -180,6 +233,17 @@ export default function ChatPage() {
 		document.addEventListener('keydown', handleKeyDown);
 		return () => document.removeEventListener('keydown', handleKeyDown);
 	}, [authMode, closeAuth]);
+
+	useEffect(() => {
+		if (!isAccountOpen) return;
+
+		function handleKeyDown(e: KeyboardEvent) {
+			if (e.key === 'Escape') closeAccount();
+		}
+
+		document.addEventListener('keydown', handleKeyDown);
+		return () => document.removeEventListener('keydown', handleKeyDown);
+	}, [isAccountOpen, closeAccount]);
 
 	useEffect(() => {
 		bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -266,6 +330,137 @@ export default function ChatPage() {
 		}
 	}
 
+	async function accountPost(path: string, body: Record<string, string>, includeCsrf: boolean) {
+		const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+		if (includeCsrf) headers['X-CSRF-Token'] = csrfToken;
+
+		const res = await fetch(`/api/auth/${path}`, {
+			method: 'POST',
+			headers,
+			credentials: 'include',
+			body: JSON.stringify(body)
+		});
+		const data: unknown = await res.json().catch(() => null);
+
+		if (!res.ok) {
+			throw new Error(errorMessage(data, 'Account request failed'));
+		}
+
+		return data;
+	}
+
+	async function handleChangePassword(e: FormEvent<HTMLFormElement>) {
+		e.preventDefault();
+		if (isAccountSending) return;
+
+		setIsAccountSending(true);
+		setAccountError('');
+		setAccountMessage('');
+
+		try {
+			const data = await accountPost(
+				'change-password',
+				{ current_password: currentPassword, new_password: newPassword },
+				true
+			);
+			setAccountMessage(responseMessage(data, 'Password changed.'));
+			setCurrentPassword('');
+			setNewPassword('');
+		} catch (err) {
+			setAccountError(err instanceof Error ? err.message : 'Could not change password.');
+		} finally {
+			setIsAccountSending(false);
+		}
+	}
+
+	async function requestVerificationEmail() {
+		if (!user || isAccountSending) return;
+
+		setIsAccountSending(true);
+		setAccountError('');
+		setAccountMessage('');
+
+		try {
+			const data = await accountPost('email-verification/request', {}, true);
+			if (isRecord(data) && isUser(data.user)) setUser(data.user);
+			setAccountMessage(responseMessage(data, 'Verification email sent.'));
+		} catch (err) {
+			setAccountError(err instanceof Error ? err.message : 'Could not send verification email.');
+		} finally {
+			setIsAccountSending(false);
+		}
+	}
+
+	async function confirmVerificationEmail() {
+		if (!verifyToken || isAccountSending) return;
+
+		setIsAccountSending(true);
+		setAccountError('');
+		setAccountMessage('');
+
+		try {
+			const data = await accountPost(
+				'email-verification/confirm',
+				{ token: verifyToken },
+				false
+			);
+			if (isRecord(data) && isUser(data.user)) setUser(data.user);
+			setVerifyToken('');
+			clearAccountTokensFromUrl();
+			setAccountMessage(responseMessage(data, 'Email verified.'));
+		} catch (err) {
+			setAccountError(err instanceof Error ? err.message : 'Could not verify email.');
+		} finally {
+			setIsAccountSending(false);
+		}
+	}
+
+	async function requestPasswordReset() {
+		if (isAccountSending) return;
+
+		setIsAccountSending(true);
+		setAccountError('');
+		setAccountMessage('');
+
+		try {
+			const data = await accountPost('password-reset/request', { email: resetEmail }, false);
+			setAccountMessage(responseMessage(data, 'If that account exists, a reset email has been sent.'));
+		} catch (err) {
+			setAccountError(err instanceof Error ? err.message : 'Could not send reset email.');
+		} finally {
+			setIsAccountSending(false);
+		}
+	}
+
+	async function confirmPasswordReset(e: FormEvent<HTMLFormElement>) {
+		e.preventDefault();
+		if (!resetToken || isAccountSending) return;
+
+		setIsAccountSending(true);
+		setAccountError('');
+		setAccountMessage('');
+
+		try {
+			const data = await accountPost(
+				'password-reset/confirm',
+				{ token: resetToken, new_password: resetPassword },
+				false
+			);
+			setResetToken('');
+			setResetPassword('');
+			setUser(null);
+			setCsrfToken('');
+			setConversations([]);
+			setActiveConversationId(null);
+			clearAccountTokensFromUrl();
+			setAccountMessage(responseMessage(data, 'Password reset.'));
+		} catch (err) {
+			setAccountError(err instanceof Error ? err.message : 'Could not reset password.');
+		} finally {
+			setIsAccountSending(false);
+		}
+	}
+
 	async function handleLogout() {
 		try {
 			const res = await fetch('/api/auth/logout', {
@@ -286,6 +481,8 @@ export default function ChatPage() {
 			setMessages(INITIAL_MESSAGES);
 			setHistoryError('');
 			setAccountError('');
+			setAccountMessage('');
+			setIsAccountOpen(false);
 		} catch {
 			setAccountError('Could not log out.');
 		}
@@ -311,7 +508,7 @@ export default function ChatPage() {
 	}
 
 	async function openConversation(conversationId: number) {
-		if (isSending) return;
+		if (isSending || deletingConversationId !== null) return;
 
 		try {
 			const res = await fetch(`/api/conversations/${conversationId}`, { credentials: 'include' });
@@ -338,6 +535,40 @@ export default function ChatPage() {
 			setHistoryError('');
 		} catch {
 			setHistoryError('Could not open that chat.');
+		}
+	}
+
+	async function deleteConversation(conversationId: number) {
+		if (isSending || deletingConversationId !== null) return;
+
+		setDeletingConversationId(conversationId);
+
+		try {
+			const res = await fetch(`/api/conversations/${conversationId}`, {
+				method: 'DELETE',
+				headers: { 'X-CSRF-Token': csrfToken },
+				credentials: 'include'
+			});
+
+			if (!res.ok) {
+				setHistoryError('Could not delete that chat.');
+				return;
+			}
+
+			setConversations((prev) =>
+				prev.filter((conversation) => conversation.id !== conversationId)
+			);
+			setHistoryError('');
+
+			if (activeConversationId === conversationId) {
+				setActiveConversationId(null);
+				setMessages(INITIAL_MESSAGES);
+				setInput('');
+			}
+		} catch {
+			setHistoryError('Could not delete that chat.');
+		} finally {
+			setDeletingConversationId(null);
 		}
 	}
 
@@ -485,9 +716,9 @@ export default function ChatPage() {
 	const hasMessages = messages.length > 0;
 
 	return (
-		<div className="app-shell-enter flex min-h-dvh flex-col bg-white text-[#101828] md:flex-row">
-			<aside className="sidebar-enter flex border-b border-[#e3e8f0] bg-[#f7f8fb] p-3 md:min-h-dvh md:w-72 md:flex-col md:border-r md:border-b-0">
-				<div className="flex w-full min-w-0 flex-col gap-4">
+		<div className="app-shell-enter flex h-dvh flex-col overflow-hidden bg-white text-[#101828] md:flex-row">
+			<aside className="sidebar-enter flex shrink-0 border-b border-[#e3e8f0] bg-[#f7f8fb] p-3 md:h-dvh md:w-72 md:flex-col md:border-r md:border-b-0">
+				<div className="flex min-h-0 w-full min-w-0 flex-col gap-4">
 					<div className="brand-card rounded-3xl border border-transparent p-2">
 						<a
 							href="/"
@@ -558,20 +789,35 @@ export default function ChatPage() {
 						) : conversations.length > 0 ? (
 							<div className="flex flex-col gap-2">
 								{conversations.map((conversation) => (
-									<button
+									<div
 										key={conversation.id}
-										type="button"
-										className={`truncate rounded-2xl px-3 py-2.5 text-left text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${
+										className={`group flex items-center gap-1 rounded-2xl transition ${
 											conversation.id === activeConversationId
 												? 'bg-[#e7eef8] text-[#0b2f5f]'
 												: 'text-[#344054] hover:bg-[#edf3fb]'
 										}`}
-										onClick={() => openConversation(conversation.id)}
-										disabled={isSending}
-										aria-current={conversation.id === activeConversationId ? 'page' : undefined}
 									>
-										{conversation.title}
-									</button>
+										<button
+											type="button"
+											className="min-w-0 flex-1 truncate rounded-l-2xl px-3 py-2.5 text-left text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60"
+											onClick={() => openConversation(conversation.id)}
+											disabled={isSending || deletingConversationId !== null}
+											aria-current={
+												conversation.id === activeConversationId ? 'page' : undefined
+											}
+										>
+											{conversation.title}
+										</button>
+										<button
+											type="button"
+											className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[#667085] opacity-100 transition hover:bg-white hover:text-[#9f1d1d] disabled:cursor-not-allowed disabled:opacity-45 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+											onClick={() => deleteConversation(conversation.id)}
+											disabled={isSending || deletingConversationId !== null}
+											aria-label={`Delete ${conversation.title}`}
+										>
+											{TrashIcon()}
+										</button>
+									</div>
 								))}
 							</div>
 						) : (
@@ -584,7 +830,7 @@ export default function ChatPage() {
 				</div>
 			</aside>
 
-			<section className="main-panel-enter flex min-h-0 flex-1 flex-col bg-white">
+			<section className="main-panel-enter flex min-h-0 flex-1 flex-col overflow-hidden bg-white">
 				<header className="sticky top-0 z-10 border-b border-[#edf1f6] bg-white/90 px-4 py-3 backdrop-blur sm:px-6">
 					<div className="mx-auto flex max-w-4xl flex-col items-end gap-2">
 						{accountError && (
@@ -598,9 +844,13 @@ export default function ChatPage() {
 						<div className="flex shrink-0 items-center gap-2">
 							{user ? (
 								<>
-									<span className="hidden max-w-56 truncate text-sm font-medium text-[#344054] sm:block">
-										{user.email}
-									</span>
+									<button
+										type="button"
+										className="rounded-full px-4 py-2 text-sm font-semibold text-[#0b2f5f] transition hover:bg-[#f3f6fb]"
+										onClick={() => openAccount()}
+									>
+										Manage account
+									</button>
 									<button
 										type="button"
 										className="rounded-full border border-[#d8e0ec] px-4 py-2 text-sm font-semibold text-[#0b2f5f] transition hover:border-[#0b2f5f] hover:bg-[#f8fbff]"
@@ -723,7 +973,213 @@ export default function ChatPage() {
 							>
 								{authMode === 'signup' ? 'Log in instead' : 'Create an account'}
 							</button>
+
+							{authMode === 'login' && (
+								<button
+									type="button"
+									className="mt-1 w-full rounded-xl px-4 py-2 text-sm font-medium text-[#667085] transition hover:bg-[#f3f6fb] hover:text-[#0b2f5f]"
+									onClick={() => {
+										closeAuth();
+										openAccount(authEmail);
+									}}
+								>
+									Forgot password?
+								</button>
+							)}
 						</form>
+					</div>
+				)}
+
+				{isAccountOpen && (
+					<div
+						className="fixed inset-0 z-30 flex items-center justify-center overflow-y-auto bg-[#101828]/30 px-4 py-8 backdrop-blur-sm"
+						onMouseDown={(e) => {
+							if (e.target === e.currentTarget) closeAccount();
+						}}
+					>
+						<div
+							role="dialog"
+							aria-modal="true"
+							aria-labelledby="account-title"
+							className="w-full max-w-lg rounded-2xl border border-[#d8e0ec] bg-white p-5 shadow-2xl shadow-[#101828]/20"
+						>
+							<div className="flex items-center justify-between gap-4">
+								<h2 id="account-title" className="text-lg font-semibold text-[#101828]">
+									Manage account
+								</h2>
+								<button
+									type="button"
+									className="grid h-9 w-9 place-items-center rounded-full text-xl leading-none text-[#667085] transition hover:bg-[#f3f6fb] hover:text-[#101828]"
+									aria-label="Close account panel"
+									onClick={closeAccount}
+								>
+									×
+								</button>
+							</div>
+
+							{user && (
+								<div className="mt-5 rounded-xl border border-[#e3e8f0] bg-[#f8fafc] px-3 py-3 text-sm text-[#344054]">
+									<p className="font-semibold text-[#101828]">{user.email}</p>
+									<p className="mt-1">
+										{user.email_verified ? 'Email verified' : 'Email not verified'}
+									</p>
+								</div>
+							)}
+
+							{accountError && (
+								<p
+									role="alert"
+									className="mt-4 rounded-xl border border-[#f3b9b9] bg-[#fff5f5] px-3 py-2 text-sm text-[#9f1d1d]"
+								>
+									{accountError}
+								</p>
+							)}
+
+							{accountMessage && (
+								<p className="mt-4 rounded-xl border border-[#b9dfc7] bg-[#f4fbf6] px-3 py-2 text-sm text-[#17663a]">
+									{accountMessage}
+								</p>
+							)}
+
+							{verifyToken && (
+								<section className="mt-5 rounded-xl border border-[#d8e0ec] p-4">
+									<h3 className="text-sm font-semibold text-[#101828]">Email verification</h3>
+									<p className="mt-2 text-sm leading-6 text-[#667085]">
+										Confirm the email address attached to this verification link.
+									</p>
+									<button
+										type="button"
+										className="mt-3 rounded-xl bg-[#0b2f5f] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#08264d] disabled:cursor-not-allowed disabled:bg-[#bac6d7]"
+										onClick={confirmVerificationEmail}
+										disabled={isAccountSending}
+									>
+										{isAccountSending ? 'Working...' : 'Verify email'}
+									</button>
+								</section>
+							)}
+
+							{resetToken && (
+								<form
+									className="mt-5 rounded-xl border border-[#d8e0ec] p-4"
+									onSubmit={confirmPasswordReset}
+								>
+									<h3 className="text-sm font-semibold text-[#101828]">Reset password</h3>
+									<label
+										className="mt-3 block text-sm font-medium text-[#344054]"
+										htmlFor="reset-new-password"
+									>
+										New password
+									</label>
+									<input
+										id="reset-new-password"
+										className="mt-2 w-full rounded-xl border border-[#d8e0ec] px-3 py-2.5 text-sm text-[#101828] outline-none transition focus:border-[#0b2f5f] focus:ring-4 focus:ring-[#0b2f5f]/10"
+										type="password"
+										autoComplete="new-password"
+										value={resetPassword}
+										onChange={(e) => setResetPassword(e.target.value)}
+										minLength={8}
+										required
+									/>
+									<button
+										type="submit"
+										className="mt-3 rounded-xl bg-[#0b2f5f] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#08264d] disabled:cursor-not-allowed disabled:bg-[#bac6d7]"
+										disabled={isAccountSending || resetPassword.length < 8}
+									>
+										{isAccountSending ? 'Working...' : 'Save new password'}
+									</button>
+								</form>
+							)}
+
+							{user && (
+								<>
+									<section className="mt-5 rounded-xl border border-[#d8e0ec] p-4">
+										<h3 className="text-sm font-semibold text-[#101828]">Verify email</h3>
+										<p className="mt-2 text-sm leading-6 text-[#667085]">
+											Send a fresh verification link to your account email.
+										</p>
+										<button
+											type="button"
+											className="mt-3 rounded-xl border border-[#d8e0ec] px-4 py-2.5 text-sm font-semibold text-[#0b2f5f] transition hover:border-[#0b2f5f] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+											onClick={requestVerificationEmail}
+											disabled={isAccountSending || user.email_verified}
+										>
+											{user.email_verified ? 'Already verified' : 'Send verification email'}
+										</button>
+									</section>
+
+									<form
+										className="mt-5 rounded-xl border border-[#d8e0ec] p-4"
+										onSubmit={handleChangePassword}
+									>
+										<h3 className="text-sm font-semibold text-[#101828]">Change password</h3>
+										<label
+											className="mt-3 block text-sm font-medium text-[#344054]"
+											htmlFor="current-password"
+										>
+											Current password
+										</label>
+										<input
+											id="current-password"
+											className="mt-2 w-full rounded-xl border border-[#d8e0ec] px-3 py-2.5 text-sm text-[#101828] outline-none transition focus:border-[#0b2f5f] focus:ring-4 focus:ring-[#0b2f5f]/10"
+											type="password"
+											autoComplete="current-password"
+											value={currentPassword}
+											onChange={(e) => setCurrentPassword(e.target.value)}
+											required
+										/>
+										<label
+											className="mt-3 block text-sm font-medium text-[#344054]"
+											htmlFor="new-password"
+										>
+											New password
+										</label>
+										<input
+											id="new-password"
+											className="mt-2 w-full rounded-xl border border-[#d8e0ec] px-3 py-2.5 text-sm text-[#101828] outline-none transition focus:border-[#0b2f5f] focus:ring-4 focus:ring-[#0b2f5f]/10"
+											type="password"
+											autoComplete="new-password"
+											value={newPassword}
+											onChange={(e) => setNewPassword(e.target.value)}
+											minLength={8}
+											required
+										/>
+										<button
+											type="submit"
+											className="mt-3 rounded-xl bg-[#0b2f5f] px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#08264d] disabled:cursor-not-allowed disabled:bg-[#bac6d7]"
+											disabled={
+												isAccountSending || !currentPassword || newPassword.length < 8
+											}
+										>
+											{isAccountSending ? 'Working...' : 'Change password'}
+										</button>
+									</form>
+								</>
+							)}
+
+							<section className="mt-5 rounded-xl border border-[#d8e0ec] p-4">
+								<h3 className="text-sm font-semibold text-[#101828]">Password reset email</h3>
+								<label className="mt-3 block text-sm font-medium text-[#344054]" htmlFor="reset-email">
+									Email
+								</label>
+								<input
+									id="reset-email"
+									className="mt-2 w-full rounded-xl border border-[#d8e0ec] px-3 py-2.5 text-sm text-[#101828] outline-none transition focus:border-[#0b2f5f] focus:ring-4 focus:ring-[#0b2f5f]/10"
+									type="email"
+									autoComplete="email"
+									value={resetEmail}
+									onChange={(e) => setResetEmail(e.target.value)}
+									required
+								/>
+								<button
+									type="button"
+									className="mt-3 rounded-xl border border-[#d8e0ec] px-4 py-2.5 text-sm font-semibold text-[#0b2f5f] transition hover:border-[#0b2f5f] hover:bg-[#f8fbff] disabled:cursor-not-allowed disabled:opacity-60"
+									onClick={requestPasswordReset}
+									disabled={isAccountSending || !resetEmail.trim()}
+								>
+									{isAccountSending ? 'Working...' : 'Send reset email'}
+								</button>
+							</section>
+						</div>
 					</div>
 				)}
 
@@ -840,6 +1296,26 @@ function SendIcon() {
 				strokeLinecap="round"
 				strokeLinejoin="round"
 				d="M6 12 3.269 3.125A59.769 59.769 0 0 1 21.485 12 59.768 59.768 0 0 1 3.27 20.875L5.999 12Zm0 0h7.5"
+			/>
+		</svg>
+	);
+}
+
+function TrashIcon() {
+	return (
+		<svg
+			xmlns="http://www.w3.org/2000/svg"
+			fill="none"
+			viewBox="0 0 24 24"
+			strokeWidth="1.6"
+			stroke="currentColor"
+			className="size-4"
+			aria-hidden="true"
+		>
+			<path
+				strokeLinecap="round"
+				strokeLinejoin="round"
+				d="M6 7h12M9 7V5.75A1.75 1.75 0 0 1 10.75 4h2.5A1.75 1.75 0 0 1 15 5.75V7m-7.5 0 .75 12.25A1.75 1.75 0 0 0 10 21h4a1.75 1.75 0 0 0 1.75-1.75L16.5 7M10.5 11v6M13.5 11v6"
 			/>
 		</svg>
 	);
