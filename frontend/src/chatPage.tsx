@@ -100,7 +100,9 @@ export default function ChatPage() {
 		const trimmed = input.trim();
 		if (!trimmed || isSending) return;
 
-		setMessages((prev) => [...prev, { role: 'user', text: trimmed }]);
+		const nextMessages: Message[] = [...messages, { role: 'user', text: trimmed }];
+
+		setMessages(nextMessages);
 		setInput('');
 		setIsSending(true);
 
@@ -159,7 +161,7 @@ export default function ChatPage() {
 			const res = await fetch('/api/chat', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ message: trimmed })
+				body: JSON.stringify({ message: trimmed, messages: nextMessages })
 			});
 
 			if (!res.ok) {
