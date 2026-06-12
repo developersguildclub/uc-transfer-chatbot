@@ -1,34 +1,81 @@
-@import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&family=Roboto:ital,wght@0,100..900;1,100..900&family=Syne:wght@400..800&display=swap');
-
 @import 'tailwindcss';
 
 @theme {
-	--font-instrument-sans: 'Instrument Sans', var(--font-sans);
-	--font-roboto: Roboto, var(--font-sans);
-	--font-syne: Syne, var(--font-sans);
+	--font-sans:
+		Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 @plugin 'daisyui' {
-	themes: dark;
+	themes: light;
 }
 
 @plugin 'daisyui/theme' {
-	name: 'dark';
+	name: 'light';
 	default: true;
-	--color-primary: #5bddff;
-	--color-primary-content: #000000;
+	--color-primary: #0b2f5f;
+	--color-primary-content: #ffffff;
 }
 
-button {
-	@apply touch-manipulation font-instrument-sans;
+:root {
+	color: #101828;
+	background: #f7f8fb;
+	font-family:
+		Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+body {
+	min-width: 320px;
+	margin: 0;
+	background: #f7f8fb;
+}
+
+button,
+a,
+input {
+	@apply touch-manipulation;
+}
+
+button,
+a {
+	-webkit-tap-highlight-color: transparent;
 }
 
 input {
 	@apply text-base;
 }
 
+button:focus-visible,
+a:focus-visible {
+	outline: 2px solid #0b2f5f;
+	outline-offset: 3px;
+}
+
+input:focus-visible {
+	outline: none;
+}
+
+.assistant-message p + p {
+	margin-top: 0.75rem;
+}
+
+.message-enter {
+	animation: message-enter 160ms ease-out;
+}
+
 .streaming-bubble {
 	animation: streaming-bubble-in 180ms ease-out;
+}
+
+@keyframes message-enter {
+	from {
+		opacity: 0;
+		transform: translateY(4px);
+	}
+
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }
 
 @keyframes streaming-bubble-in {
@@ -40,5 +87,16 @@ input {
 	to {
 		opacity: 1;
 		transform: translateY(0);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	::before,
+	::after {
+		scroll-behavior: auto !important;
+		transition-duration: 0.01ms !important;
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
 	}
 }
