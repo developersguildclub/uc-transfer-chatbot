@@ -49,7 +49,17 @@ def get_ai_response(user_message: str):
 
               
     rows = search_articulations(to_school=to_school, major=major, receiving=receiving, cc_course=cc_course)
-    print(rows)
+    result = agent.invoke(
+        {"messages": [
+            {"role": "user", "content": user_message}
+        ]}
+    )
+    response = result["messages"][-1]
+
+    if isinstance(response.content, str):
+        return response.content
+
+    return response.content_blocks[0]["text"]
 if __name__ == "__main__":
 
     response = get_ai_response(
