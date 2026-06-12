@@ -2,11 +2,19 @@ import sqlite3
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / "transfer.db"
+TRANSFER_DB_PATH = BASE_DIR / "transfer.db"
+APP_DB_PATH = BASE_DIR / "instance" / "app.db"
+
+DB_PATH = TRANSFER_DB_PATH
 
 
 def get_connection():
-    return sqlite3.connect(DB_PATH)
+    return sqlite3.connect(TRANSFER_DB_PATH)
+
+
+def get_app_connection():
+    APP_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    return sqlite3.connect(APP_DB_PATH)
 
 
 def setup_database():

@@ -5,6 +5,12 @@ This project has:
 - `backend/` (Flask API)
 - `frontend/` (React + Vite app)
 
+
+**quick note on storage policy**
+- Transfer and articulation data belongs in `backend/transfer.db`.
+- Private app data, including accounts, saved conversations, and chat messages, belongs in `backend/instance/app.db`.
+- `backend/instance/` is included in gitignore and should not be used for public seed data.
+
 ## Prerequisites
 
 - Python 3.10+ (recommended)
