@@ -17,10 +17,7 @@ def get_app_connection():
     return sqlite3.connect(APP_DB_PATH)
 
 
-def setup_database():
-    conn = get_connection()
-    cursor = conn.cursor()
-
+def create_transfer_schema(cursor):
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS transfer_info (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,6 +73,28 @@ def setup_database():
             FOREIGN KEY (agreement_id) REFERENCES assist_agreements(id)
         )
         """)
+
+
+SCHEMA_MIGRATIONS = (create_transfer_schema,)
+
+
+def run_migrations(cursor):
+    cursor.execute("PRAGMA user_version")
+    version = cursor.fetchone()[0]
+
+    if version > len(SCHEMA_MIGRATIONS):
+        raise RuntimeError(f"Database schema version {version} is newer than this code")
+
+    for next_version, migration in enumerate(SCHEMA_MIGRATIONS[version:], start=version + 1):
+        migration(cursor)
+        cursor.execute(f"PRAGMA user_version = {next_version}")
+
+
+def setup_database():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    run_migrations(cursor)
 
     cursor.execute(
         """
