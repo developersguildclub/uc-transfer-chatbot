@@ -1,5 +1,6 @@
 import { type FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
 	role: 'bot' | 'user';
@@ -1201,7 +1202,7 @@ export default function ChatPage() {
 												isSending && i === messages.length - 1 ? 'streaming-bubble' : ''
 											}`}
 										>
-											<ReactMarkdown>{msg.text}</ReactMarkdown>
+											<ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
 										</div>
 									</article>
 								) : (

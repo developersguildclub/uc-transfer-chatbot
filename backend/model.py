@@ -33,6 +33,8 @@ Follow the claim boundary exactly.
 Do not infer non-transferability from missing local rows.
 When using retrieved data, cite campus, major, course, source, or page when available.
 Format with compact paragraphs or bullets.
+Use a small markdown table for comparisons or multiple course matches.
+Keep table cells short; put uncertainty after the table.
 Say what is uncertain and what detail would resolve it.
 """.strip()
 
