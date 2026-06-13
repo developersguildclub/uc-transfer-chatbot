@@ -1,16 +1,12 @@
 UC Transfer Chatbot
 
-This is a React + Flask chatbot for UC transfer planning.
-
-The frontend lives in `frontend/`.
-
-The backend lives in `backend/`.
+This is a React + Vite frontend and Flask backend for UC transfer planning.
 
 Transfer and articulation data lives in `backend/transfer.db` and JSON files under `backend/data/`.
 
 Private app data lives in `backend/instance/app.db`. That includes accounts, sessions, saved chats, and saved messages. Keep `backend/instance/` out of git.
 
-The app currently supports this set of flows.
+The frontend lives in `frontend/`. The backend lives in `backend/`.
 
 - course articulation lookup from local ASSIST-derived data
 - IGETC and Cal-GETC context from JSON data
@@ -23,27 +19,23 @@ The app currently supports this set of flows.
 - email verification by email
 - account management from the app header
 
-Use two terminals for local development.
-
-Run this in Terminal 1.
+You need Python 3.10+, Node.js 18+, and npm. You do not need pnpm installed globally because the commands use `npx pnpm@latest`.
 
 ```bash
-cd /Users/nadathurv/Downloads/GitHub/uc-transfer-chatbot/backend && source "$HOME/Documents/uv_global_venv/bin/activate" && python app.py
+git clone https://github.com/developersguildclub/uc-transfer-chatbot.git
+cd uc-transfer-chatbot
+
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+cp .env.example .env
 ```
 
-Run this in Terminal 2.
+If your shell does not support `source` or `cp`, use `.venv\Scripts\activate` and `copy .env.example .env`.
 
-```bash
-cd /Users/nadathurv/Downloads/GitHub/uc-transfer-chatbot/frontend && npx pnpm@latest install && npx pnpm@latest dev
-```
-
-Open `http://localhost:5173`.
-
-The frontend proxies `/api` to `http://localhost:5000`.
-
-Create `backend/.env` from `backend/.env.example`.
-
-Set these in `backend/.env` for local work.
+Set the required backend env values in `backend/.env`.
 
 ```bash
 AI_API_KEY="your-key"
@@ -53,7 +45,7 @@ FRONTEND_ORIGINS="http://localhost:5173"
 SESSION_COOKIE_SECURE=false
 ```
 
-Email features need SMTP config.
+Email is optional for basic local chat. Password reset and email verification need SMTP values.
 
 ```bash
 MAIL_HOST="smtp.example.com"
@@ -64,16 +56,38 @@ MAIL_PASSWORD="smtp-password"
 MAIL_FROM="UC Transfer Chatbot <no-reply@example.com>"
 ```
 
-For production, set `APP_BASE_URL` to the frontend URL. Set `FRONTEND_ORIGINS` to the exact frontend origin. Set `SESSION_COOKIE_SECURE=true` when serving over HTTPS.
-
-These are the usual checks before opening a PR.
+Run the backend from `backend/` and leave that terminal open.
 
 ```bash
-cd /Users/nadathurv/Downloads/GitHub/uc-transfer-chatbot/frontend && npx pnpm@latest lint && npx pnpm@latest build
+python app.py
 ```
+
+The backend runs at `http://localhost:5000`. In a second terminal from the repo root, run the frontend.
 
 ```bash
-cd /Users/nadathurv/Downloads/GitHub/uc-transfer-chatbot/backend && source "$HOME/Documents/uv_global_venv/bin/activate" && python -m unittest backend.test_auth_routes
+cd frontend
+npx pnpm@latest install
+npx pnpm@latest dev
 ```
 
-If port `5000` is busy on macOS, inspect it before killing anything. AirPlay Receiver / Control Center can bind that port.
+Open `http://localhost:5173`.
+
+The frontend proxies `/api` to the backend on port `5000`.
+
+For production, set `APP_BASE_URL` to the deployed frontend URL. Set `FRONTEND_ORIGINS` to the exact frontend origin. Set `SESSION_COOKIE_SECURE=true` when serving over HTTPS.
+
+Before opening a PR, run the frontend checks.
+
+```bash
+cd frontend
+npx pnpm@latest lint
+npx pnpm@latest build
+```
+
+Run backend tests from the repo root with the backend environment activated.
+
+```bash
+python -m unittest backend.test_auth_routes
+```
+
+If port `5000` is busy, inspect it before killing anything.

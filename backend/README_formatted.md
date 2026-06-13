@@ -10,17 +10,20 @@ It uses two SQLite databases.
 
 The JSON data under `data/` is for compact structured context that should not live in the LLM prompt by default. `data/transfer_requirements.json` currently stores IGETC and Cal-GETC facts.
 
-Run locally from this folder.
+From the repo root, set up the backend.
 
 ```bash
-source "$HOME/Documents/uv_global_venv/bin/activate" && python app.py
+cd backend
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+cp .env.example .env
 ```
 
-The API runs on `http://localhost:5000`.
+If your shell does not support `source` or `cp`, use `.venv\Scripts\activate` and `copy .env.example .env`.
 
-The frontend runs separately and proxies `/api` to this backend.
-
-Set these env values for local work.
+Set the required local env values in `backend/.env`.
 
 ```bash
 AI_API_KEY="your-key"
@@ -30,7 +33,7 @@ FRONTEND_ORIGINS="http://localhost:5173"
 SESSION_COOKIE_SECURE=false
 ```
 
-Email needs SMTP config.
+Email is optional for basic local chat. Password reset and email verification need SMTP values.
 
 ```bash
 MAIL_HOST="smtp.example.com"
@@ -47,7 +50,17 @@ MAIL_FROM="UC Transfer Chatbot <no-reply@example.com>"
 
 `SESSION_COOKIE_SECURE` should be `true` on HTTPS production deployments and `false` for local HTTP.
 
-Current routes.
+Run the backend from `backend/`.
+
+```bash
+python app.py
+```
+
+The API runs on `http://localhost:5000`.
+
+The frontend runs separately and proxies `/api` to this backend.
+
+Routes currently exposed by the backend:
 
 - `GET /` confirms the backend is running.
 - `GET /search` searches parsed articulation rows.
@@ -71,7 +84,7 @@ Write routes that change private app state require the session cookie and `X-CSR
 
 The model path keeps context short. It sends recent conversation messages plus a compact earlier-question index. It retrieves course rows only when the current user turn asks about courses. It retrieves IGETC / Cal-GETC JSON only when the user asks about general education or transfer requirements.
 
-Set these on the Flask host for production.
+Set these on the Flask host for production:
 
 - `AI_API_KEY`
 - `USE_LLM7`
@@ -85,8 +98,8 @@ Set these on the Flask host for production.
 
 If email fails, account creation and login still work. Password reset and email verification will return an email configuration error until SMTP is configured.
 
-Useful backend check.
+Run backend tests from the repo root with the backend environment activated.
 
 ```bash
-source "$HOME/Documents/uv_global_venv/bin/activate" && python -m unittest backend.test_auth_routes
+python -m unittest backend.test_auth_routes
 ```
