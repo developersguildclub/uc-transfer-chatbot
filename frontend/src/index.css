@@ -64,6 +64,41 @@ input:focus-visible {
 	margin-top: 0.75rem;
 }
 
+.assistant-message {
+	overflow-x: auto;
+}
+
+.assistant-message table {
+	width: 100%;
+	margin-top: 0.75rem;
+	border: 1px solid #d8e0ec;
+	border-collapse: collapse;
+	font-size: 0.82rem;
+	line-height: 1.5;
+}
+
+.assistant-message th,
+.assistant-message td {
+	padding: 0.55rem 0.7rem;
+	border-bottom: 1px solid #e3e8f0;
+	text-align: left;
+	vertical-align: top;
+}
+
+.assistant-message th {
+	background: #edf3fb;
+	color: #0b2f5f;
+	font-weight: 700;
+}
+
+.assistant-message tr:last-child td {
+	border-bottom: 0;
+}
+
+.assistant-message td {
+	color: #344054;
+}
+
 .app-shell-enter {
 	animation: page-fade-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
